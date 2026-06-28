@@ -1,3 +1,7 @@
+﻿// ============================================================
+// main.gsc
+// ============================================================
+
 /*
     ░█████╗░██████╗░██████╗░░█████╗░██████╗░██╗████████╗██╗░█████╗░███╗░░██╗
     ██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔══██╗██║╚══██╔══╝██║██╔══██╗████╗░██║
@@ -8,19 +12,17 @@
 
     Menu:                 Apparition
     Developer:            CF4_99
-    Version:              1.6.0.7
+    Version:              1.6.0.9
     Discord:              cf4_99
     YouTube:              https://www.youtube.com/c/CF499
     Project Start Date:   6/10/21
     Initial Release Date: 1/29/23
 
     Apparition Discord Server: https://discord.gg/apparitionbo3
-
     Menu Source & Current Update: https://github.com/CF4x99/Apparition
     Menu Source(For Mod Tools): https://github.com/CF4x99/Apparition-ModTools
-    IF YOU USE ANY SCRIPTS FROM THIS PROJECT, OR MAKE AN EDIT, LEAVE CREDIT.
 
-    Apparition has been compiled together into one file to make things faster and easier for me to quickly move things over from the main source.
+    IF YOU USE ANY SCRIPTS FROM THIS PROJECT, OR MAKE AN EDIT, LEAVE CREDIT.
     PLEASE DO NOT REUPLOAD THIS PROJECT TO THE WORKSHOP!
 
     Credits:
@@ -53,6 +55,7 @@
 #using scripts\zm\_zm_equipment;
 #using scripts\zm\_zm_laststand;
 #using scripts\zm\_zm_unitrigger;
+#using scripts\shared\music_shared;
 #using scripts\zm\_zm_melee_weapon;
 #using scripts\zm\_zm_placeable_mine;
 #using scripts\zm\gametypes\_globallogic;
@@ -96,14 +99,14 @@
 
 #namespace duplicate_render;
 
-function autoexec __init__sytem__()
+function autoexec __init__system__()
 {
-	system::register("duplicate_render", &__init__, undefined, undefined);
+    system::register("duplicate_render", &__init__, undefined, undefined);
 }
 
 function __init__()
 {
-	callback::on_spawned(&onPlayerSpawned);
+    callback::on_spawned(&onPlayerSpawned);
     callback::on_disconnect(&onPlayerDisconnect);
 }
 
@@ -125,37 +128,7 @@ function onPlayerSpawned()
         if(IsDefined(GSpawnMax) && GSpawnMax)
             self thread GSpawnProtection();
         
-        level.player_out_of_playable_area_monitor = 0;
-        level.player_out_of_playable_area_monitor_callback = &player_out_of_playable_area_monitor;
-        level.player_intersection_tracker_override = &player_intersection_tracker;
-
-        if(IsDefined(level.overrideplayerdamage))
-            level.saved_overrideplayerdamage = level.overrideplayerdamage;
-
-        level.overrideplayerdamage = &override_player_damage;
-
-        if(IsDefined(level.global_damage_func))
-            level.saved_global_damage_func = level.global_damage_func;
-        
-        level.global_damage_func = &override_zombie_damage;
-
-        if(IsDefined(level.global_damage_func_ads))
-            level.saved_global_damage_func_ads = level.global_damage_func_ads;
-        
-        level.global_damage_func_ads = &override_zombie_damage_ads;
-
-        if(IsDefined(level.callbackactorkilled))
-            level.saved_callbackactorkilled = level.callbackactorkilled;
-        
-        level.callbackactorkilled = &override_actor_killed;
-
-        if(ReturnMapName() != "Unknown")
-            level.custom_game_over_hud_elem = &override_game_over_hud_elem;
-
-        if(IsDefined(level.player_score_override))
-            level.saved_player_score_override = level.player_score_override;
-        
-        level.player_score_override = &override_player_points;
+        level SetGameOverrides();
     }
 
     if(IsDefined(self.overrideplayerdamage))
@@ -218,7 +191,7 @@ function DefineMenuArrays()
     level.GSpeed = GetDvarString("g_speed");
     level.roundIntermissionTime = ((IsDefined(level.zombie_vars) && IsDefined(level.zombie_vars["zombie_between_round_time"])) ? level.zombie_vars["zombie_between_round_time"] : 10);
     
-    level.SavedMapEntities = [];
+    level.menu_entities = [];
     level.menu_models = Array("defaultactor", "defaultvehicle");
     ents = GetEntArray("script_model", "classname");
 
@@ -230,7 +203,7 @@ function DefineMenuArrays()
                 continue;
 
             array::add(level.menu_models, entity.model, 0);
-            level.SavedMapEntities[level.SavedMapEntities.size] = entity;
+            level.menu_entities[level.menu_entities.size] = entity;
             
             entity.savedOrigin = entity.origin;
             entity.savedAngles = entity.angles;
@@ -352,6 +325,19 @@ function playerSetup()
 
         if(ReturnMapName() == "Unknown" || IsSupportedCustomMap())
             self DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^7On Custom Maps, Some Things Might Not Work As They Should");
+        
+        if(IsDefined(level.uiparent) && IsDefined(level.uiparent.children) && level.uiparent.children.size)
+        {
+            for(a = 0; a < level.uiparent.children.size; a++)
+            {
+                if(!IsDefined(level.uiparent.children[a]))
+                    continue;
+                
+                level.uiparent.children[a] hud::destroyelem();
+            }
+
+            level.uiparent.children = [];
+        }
     }
 }
 
@@ -370,15 +356,17 @@ function MenuInstructionsDisplay()
         if(self hasMenu() && (!Is_True(self.DisableMenuInstructions) && (!IsDefined(self.menuInstructionsUI["background"]) && !Is_True(self.DisableInstructionsBackground) || !IsDefined(self.menuInstructionsUI["outline"]) && !Is_True(self.DisableInstructionsBackground) || !IsDefined(self.menuInstructionsUI["string"]))))
         {
             alt = Is_True(self.AlternateInstructions);
+            bgAlpha = ((self.MenuDesign == "Classic") ? 0.85 : 1);
+            bgColor = ((self.MenuDesign == "Classic") ? (25, 25, 25) : ((self.MenuDesign == "Apparition") ? (42, 42, 42) : (0, 0, 0)));
 
             if(!IsDefined(self.menuInstructionsUI["background"]) && !Is_True(self.DisableInstructionsBackground))
-                self.menuInstructionsUI["background"] = self createRectangle((alt ? "CENTER" : "TOP_LEFT"), "CENTER", self.instructionsX, self.instructionsY, 0, 15, (42, 42, 42), 2, 1, "white");
+                self.menuInstructionsUI["background"] = self createRectangle((alt ? "CENTER" : "TOP_LEFT"), self.instructionsX, self.instructionsY, 0, 15, bgColor, 2, bgAlpha, "white");
             
             if(!IsDefined(self.menuInstructionsUI["outline"]) && !Is_True(self.DisableInstructionsBackground))
-                self.menuInstructionsUI["outline"] = self createRectangle((alt ? "CENTER" : "TOP_LEFT"), "CENTER", (alt ? self.instructionsX : (self.instructionsX - 1)), (alt ? self.instructionsY : (self.instructionsY - 1)), 0, 17, self.MainTheme, 1, 1, "white");
+                self.menuInstructionsUI["outline"] = self createRectangle((alt ? "CENTER" : "TOP_LEFT"), (alt ? self.instructionsX : (self.instructionsX - 1)), (alt ? self.instructionsY : (self.instructionsY - 1)), 0, 17, self.MainTheme, 1, 1, "white");
             
             if(!IsDefined(self.menuInstructionsUI["string"]))
-                self.menuInstructionsUI["string"] = self createText("default", 1.1, 3, "", (alt ? "CENTER" : "LEFT"), "CENTER", (alt ? self.instructionsX : (self.instructionsX + 1)), (alt ? self.instructionsY : (self.instructionsY + 7)), 1, (255, 255, 255));
+                self.menuInstructionsUI["string"] = self createText("default", 1.1, 3, "", ((alt && !Is_True(self.DisableInstructionsBackground)) ? "CENTER" : "LEFT"), (alt ? self.instructionsX : (self.instructionsX + 1)), (alt ? self.instructionsY : (self.instructionsY + 7)), 1, (255, 255, 255));
         }
 
         if(IsDefined(self.menuInstructionsUI["string"]) && Is_True(self.DisableMenuInstructions) || !self hasMenu() || !Is_Alive(self) && !Is_True(self.refreshInstructionsUI) || Is_True(self.InstructionsForceRefresh))
@@ -446,7 +434,7 @@ function MenuInstructionsDisplay()
             self SetInstructionsPosition(str);
         }
 
-        wait 0.1;
+        wait 0.01;
     }
 
     if(Is_True(self.MenuInstructionsDisplay))
@@ -496,7 +484,7 @@ function SetInstructionsPosition(str)
     
     switch(self.MenuDesign)
     {
-        case "Physics 'n' Flex":
+        case "Basic":
         case "Classic":
             yOffset = 5;
             xOffset = 0;
@@ -525,7 +513,7 @@ function SetInstructionsPosition(str)
     width = (Is_True(self.AlternateInstructions) ? (self.menuInstructionsUI["string"] GetTextWidth3arc(self) - 28) : self.menuInstructionsUI["string"] GetTextWidth3arc(self));
     height = (IsSubStr(str, "\n") ? (CorrectNL_BGHeight(str) - 5) : CorrectNL_BGHeight(str));
 
-    if(self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions))
+    if(self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions) && !Is_True(self.RepositionMenuInstructions))
     {
         menuWidth = ((IsDefined(self.menuUI) && IsDefined(self.menuUI["background"])) ? (self.menuUI["background"].width + widthOffset) : (self.MenuWidth + widthOffset));
 
@@ -539,11 +527,8 @@ function SetInstructionsPosition(str)
         self.menuInstructionsUI["outline"] SetShaderValues(undefined, (width + 2), (height + 2));
     }
 
-    if(Is_True(self.RepositionMenuInstructions))
-        return;
-
-    xPos = ((self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions)) ? ((IsDefined(self.menuUI) && IsDefined(self.menuUI["background"])) ? (self.menuUI["background"].x + xOffset) : (self.menuX + xOffset)) : self.instructionsX);
-    yPos = ((self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions) && IsDefined(self.menuUI) && IsDefined(self.menuUI["background"])) ? ((self.menuUI["background"].y + self.menuUI["background"].height) + yOffset) : (self.instructionsY - height));
+    xPos = ((self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions) && !Is_True(self.RepositionMenuInstructions)) ? ((IsDefined(self.menuUI) && IsDefined(self.menuUI["background"])) ? (self.menuUI["background"].x + xOffset) : (self.menuX + xOffset)) : self.instructionsX);
+    yPos = ((self isInMenu(true) && Is_True(self.AdaptiveMenuInstructions) && !Is_True(self.RepositionMenuInstructions) && IsDefined(self.menuUI) && IsDefined(self.menuUI["background"])) ? ((self.menuUI["background"].y + self.menuUI["background"].height) + yOffset) : (self.instructionsY - height));
 
     if(IsDefined(self.menuInstructionsUI["background"]) && (self.menuInstructionsUI["background"].y != yPos || self.menuInstructionsUI["background"].x != xPos))
     {
@@ -586,6000 +571,10 @@ function SetMenuInstructions(text)
     self.instructionsString = ((!IsDefined(text) || !IsArray(text) && text == "" || IsArray(text) && !text.size) ? undefined : text);
 }
 
+// ============================================================
+// Functions/advanced_scripts.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//menu.gsc
-function RunMenuOptions(menu)
-{
-    switch(menu)
-    {
-        case "Main":
-            self addMenu(((self.MenuDesign == "Native") ? "Main Menu" : GetMenuName()));
-                self addOpt("Basic Scripts", &newMenu, "Basic Scripts");
-                self addOpt("Menu Customization", &newMenu, "Menu Customization");
-                self addOpt("Message Menu", &newMenu,"Message Menu");
-                self addOpt("Teleport Menu", &newMenu, "Teleport Menu");
-
-                if(self getVerification() > 2) //VIP
-                {
-                    self addOpt("Power-Up Menu", &newMenu, "Power-Up Menu");
-                    self addOpt("Model Manipulation", &newMenu, "Model Manipulation");
-                    self addOpt("Weaponry", &newMenu, "Weaponry");
-                    self addOpt("Bullet Menu", &newMenu, "Bullet Menu");
-                    self addOpt("Fun Scripts", &newMenu, "Fun Scripts");
-                    self addOpt("Aimbot Menu", &newMenu, "Aimbot Menu");
-
-                    if(self getVerification() > 3) //Admin
-                    {
-                        self addOpt("Forge Options", &newMenu, "Forge Options");
-                        self addOpt("Entity Options", &newMenu, "Entity Options");
-                        self addOpt("Advanced Scripts", &newMenu, "Advanced Scripts");
-
-                        if(ReturnMapName() != "Unknown")
-                            self addOpt(ReturnMapName() + " Scripts", &newMenu, ReturnMapName() + " Scripts");
-                        
-                        if(self getVerification() > 4) //Co-Host
-                        {
-                            self addOpt("Server Modifications", &newMenu, "Server Modifications");
-                            self addOpt("Server Tweakables", &newMenu, "Server Tweakables");
-                            self addOpt("Zombie Options", &newMenu, "Zombie Options");
-                            self addOpt("Spawnables", &newMenu, "Spawnables");
-
-                            if(self IsHost() || self isDeveloper())
-                                self addOpt("Host Menu", &newMenu, "Host Menu");
-                            
-                            self addOpt("Players Menu", &newMenu, "Players");
-                            self addOpt("All Players Menu", &newMenu, "All Players");
-
-                            if(!Is_True(level.GameModeSelected) && (self IsHost() || self isDeveloper()))
-                                self addOpt("Game Modes", &newMenu, "Game Modes");
-                        }
-                    }
-                }
-            break;
-        
-        case "Quick Menu":
-            self addMenu(menu);
-
-                if(Is_Alive(self))
-                {
-                    self addOptBool(self.playerGodmode, "God Mode", &Godmode, self);
-                    self addOptBool(self.Noclip, "Noclip", &Noclip1, self);
-                    self addOptBool(self.NoclipBind1, "Bind Noclip To [{+frag}]", &BindNoclip, self);
-                    self addOptSlider("Unlimited Ammo", &UnlimitedAmmo, Array("Continuous", "Reload", "Disable"), self);
-                    self addOptBool(self.UnlimitedEquipment, "Unlimited Equipment", &UnlimitedEquipment, self);
-                    self addOptSlider("Modify Score", &ModifyScore, Array("1000000", "100000", "10000", "1000", "100", "10", "0", "-10", "-100", "-1000", "-10000", "-100000", "-1000000"), self);
-                    self addOpt("Perk Menu", &newMenu, "Perk Menu");
-                    self addOptBool(self.playerIgnoreMe, "No Target", &NoTarget, self);
-                    self addOptBool(self.ReducedSpread, "Reduced Spread", &ReducedSpread, self);
-                    self addOptBool(self HasPerk("specialty_unlimitedsprint"), "Unlimited Sprint", &UnlimitedSprint, self);
-                }
-
-                self addOpt("Respawn", &ServerRespawnPlayer, self);
-
-                if(Is_Alive(self))
-                    self addOpt("Revive", &PlayerRevive, self);
-
-                if(self IsHost() || self IsDeveloper())
-                {
-                    self addOpt("Restart Game", &ServerRestartGame);
-                    self addOpt("Disconnect", &disconnect);
-                }
-            break;
-        
-        case "Menu Customization":
-        case "Open Controls":
-        case "Menu Instructions":
-        case "Main Design Color":
-        case "Menu Preferences":
-            self PopulateMenuCustomization(menu);
-            break;
-        
-        case "Message Menu":
-        case "Miscellaneous Messages":
-        case "Advertisements Messages":
-            self PopulateMessageMenu(menu);
-            break;
-        
-        case "Power-Up Menu":
-            self PopulatePowerupMenu(menu);
-            break;
-        
-        case "Advanced Scripts":
-        case "Custom Sentry":
-            self PopulateAdvancedScripts(menu);
-            break;
-        
-        case "Forge Options":
-        case "Spawn Script Model":
-        case "Rotate Script Model":
-            self PopulateForgeOptions(menu);
-            break;
-        
-        case "Entity Options":
-        case "Entity Editing List":
-        case "Entity Editor":
-        case "Entity Rotation":
-        case "Entities Rotation":
-
-            if((!IsDefined(level.SavedMapEntities) || !level.SavedMapEntities.size) && menu != "Entity Options")
-            {
-                self.menu_parent = Array("Main");
-                menu = "Entity Options";
-            }
-            
-            if((menu == "Entity Editor" || menu == "Entity Rotation") && !IsDefined(level.SavedMapEntities[self.EntityEditorNumber]))
-            {
-                self.menu_parent = Array("Main", "Entity Options");
-                menu = "Entity Editing List";
-            }
-
-            self.currentMenu = menu;
-            self PopulateEntityOptions(menu);
-            break;
-        
-        case "The Giant Scripts":
-        case "The Giant Teleporters":
-            self PopulateTheGiantScripts(menu);
-            break;
-        
-        case "Nacht Der Untoten Scripts":
-            self PopulateNachtScripts(menu);
-            break;
-        
-        case "Kino Der Toten Scripts":
-            self PopulateKinoScripts(menu);
-            break;
-        
-        case "Moon Scripts":
-            self PopulateMoonScripts(menu);
-            break;
-        
-        case "Shangri-La Scripts":
-            self PopulateShangriLaScripts(menu);
-            break;
-        
-        case "Verruckt Scripts":
-            self PopulateVerrucktScripts(menu);
-            break;
-        
-        case "Shi No Numa Scripts":
-            self PopulateShinoScripts(menu);
-            break;
-        
-        case "Origins Scripts":
-        case "Origins Generators":
-        case "Origins Gateways":
-        case "Give Shovel Origins":
-        case "Give Helmet Origins":
-        case "Soul Boxes":
-        case "Origins Challenges":
-        case "Origins Puzzles":
-        case "Ice Puzzles":
-        case "Wind Puzzles":
-        case "Fire Puzzles":
-        case "Lightning Puzzles":
-        case "Origins G-Strike Quest":
-            self PopulateOriginsScripts(menu);
-            break;
-        
-        case "Gorod Krovi Scripts":
-            self PopulateGorodKroviScripts(menu);
-            break;
-        
-        case "Zetsubou No Shima Scripts":
-        case "Pack 'a' Punch Parts":
-        case "KT-4 Parts":
-        case "KT-4 Upgrade Parts":
-        case "Skulltar Teleports":
-        case "ZNS Bucket Water":
-            self PopulateZetsubouNoShimaScripts(menu);
-            break;
-        
-        case "Ascension Scripts":
-            self PopulateAscensionScripts(menu);
-            break;
-        
-        case "Der Eisendrache Scripts":
-        case "Castle Side Easter Eggs":
-        case "Bow Quests":
-        case "Fire Bow":
-        case "Lightning Bow":
-        case "Void Bow":
-        case "Wolf Bow":
-            self PopulateDerEisendracheScripts(menu);
-            break;
-        
-        case "Shadows Of Evil Scripts":
-        case "Beast Mode":
-        case "SOE Fumigator":
-        case "SOE Smashables":
-        case "SOE Power Switches":
-        case "Snakeskin Boots":
-            self PopulateSOEScripts(menu);
-            break;
-        
-        case "Revelations Scripts":
-        case "Revelations Keeper Companion":
-            self PopulateRevelationsScripts(menu);
-            break;
-        
-        case "Mob Of The Dead Scripts":
-        case "Modify After Life Lives":
-        case "MOTD Power Generators":
-            self PopulateMOTDScripts(menu);
-            break;
-        
-        case "Die Rise Scripts":
-        case "Die Rise Elevator Keys":
-        case "Die Rise Bank Cash":
-        case "Die Rise Player Ranks":
-            self PopulateDieRiseScripts(menu);
-            break;
-        
-        case "Bus Depot Scripts":
-            self PopulateBusDepotScripts(menu);
-            break;
-        
-        case "Tunnel Scripts":
-            self PopulateTunnelScripts(menu);
-            break;
-        
-        case "Diner Scripts":
-            self PopulateDinerScripts(menu);
-            break;
-        
-        case "Farm Scripts":
-            self PopulateFarmScripts(menu);
-            break;
-        
-        case "Der Riese: Declassified Scripts":
-            self PopulateDerRieseScripts(menu);
-            break;
-        
-        case "Leviathan Scripts":
-            self PopulateLeviathanScripts(menu);
-            break;
-        
-        case "Map Challenges":
-            self PopulateMapChallenges(menu);
-            break;
-        
-        case "Server Modifications":
-        case "Set Round":
-        case "Anti-Join":
-        case "Doheart Options":
-        case "Lobby Timer Options":
-        case "Zombie Craftables":
-        case "Zombie Traps":
-        case "Mystery Box Options":
-        case "Mystery Box Weapons":
-        case "Mystery Box Normal Weapons":
-        case "Mystery Box Upgraded Weapons":
-        case "Joker Model":
-        case "Change Map":
-            self PopulateServerModifications(menu);
-            break;
-        
-        case "Server Tweakables":
-        case "Edit Power-Ups":
-            self PopulateServerTweakables(menu);
-            break;
-        
-        case "Zombie Options":
-        case "AI Spawner":
-        case "Prioritize Players":
-        case "Zombie Model Manipulation":
-        case "Zombie Animations":
-        case "Zombie Death Effect":
-        case "Zombie Damage Effect":
-            self PopulateZombieOptions(menu);
-            break;
-        
-        case "Spawnables":
-        case "Rain Options":
-        case "Rain Models":
-        case "Rain Effects":
-        case "Rain Projectiles":
-        case "Small Spawnables":
-        case "Large Spawnables":
-        case "Skybase":
-            self PopulateSpawnables(menu);
-            break;
-        
-        case "Host Menu":
-            self addMenu(menu);
-                self addOpt("Disconnect", &disconnect);
-                self addOpt("Player Info", &newMenu, "Player Info");
-                self addOpt("Custom Map Spawns", &newMenu, "Custom Map Spawns");
-                self addOpt("Player Score & Overhead Name Color", &newMenu, "Player Score & Overhead Name Color");
-                self addOptIncSlider("Field Of View Scale", &FieldOfViewScale, 65, GetDvarFloat("cg_fov"), 85, 1);
-                self addOptIncSlider("Field Of View", &FieldOfView, 65, GetDvarFloat("cg_fov_default"), 120, 1);
-                self addOptBool(self.ShowOrigin, "Show Origin", &ShowOrigin);
-                self addOptBool(level.AntiEndGame, "Anti-End Game", &AntiEndGame);
-                self addOptBool(self.EntityCountDisplay, "Entity Count Display", &EntityCountDisplay);
-
-                GSpawnMax = ReturnMapGSpawnLimit();
-
-                if(IsDefined(GSpawnMax) && GSpawnMax)
-                    self addOptBool(level.GSpawnProtection, "G_Spawn Crash Protection", &GSpawnProtection);
-                
-                self addOptBool((GetDvarString("r_showTris") == "1"), "Tris Lines", &TrisLines);
-                self addOptBool((GetDvarString("ui_lobbyDebugVis") == "1"), "DevGui Info", &DevGUIInfo);
-                self addOptBool((GetDvarString("r_fog") == "0"), "Disable Fog", &DisableFog);
-                self addOptBool((GetDvarString("sv_cheats") == "1"), "SV Cheats", &ServerCheats);
-                self addOptBool((GetDvarInt("developer") == 2), "Developer Mode", &SetDeveloperMode);
-            break;
-        
-        case "Player Info":
-            self addMenu(menu);
-                self addOptBool(level.DisablePlayerInfo, "Disable", &DisablePlayerInfo);
-                self addOptBool(level.IncludeIPInfo, "Include IP", &IncludeIPInfo);
-            break;
-        
-        case "Custom Map Spawns":
-            self addMenu(menu);
-                self addOptSlider("Set Map Spawn Location", &SetMapSpawn, Array("Player 1", "Player 2", "Player 3", "Player 4"), "Set");
-                self addOptSlider("Clear Map Spawn Location", &SetMapSpawn, Array("Player 1", "Player 2", "Player 3", "Player 4"), "Clear");
-            break;
-        
-        case "Player Score & Overhead Name Color":
-
-            if(!IsDefined(self.PlayerScoreIndex))
-                self.PlayerScoreIndex = 0;
-            
-            colorVar = [];
-            colorVec = [];
-
-            for(a = 0; a < 4; a++)
-            {
-                colorVar[a] = GetDvarString("scoreColor" + a);
-
-                if(IsDefined(colorVar[a]) && colorVar[a] != "")
-                {
-                    vect = GetDvarVector1("scoreColor" + a);
-
-                    if(IsDefined(vect))
-                        colorVec[a] = (Int(vect[0]), Int(vect[1]), Int(vect[2]));
-                }
-                else
-                {
-                    colorVec[a] = (255, 255, 255);
-                }
-            }
-
-            self addMenu(menu);
-                self addOptIncSlider("Player Index", &PlayerScoreIndex, 1, 1, 4, 1);
-                self addOpt("");
-
-                for(a = 0; a < GetColorNames().size; a++)
-                    self addOptBool((IsDefined(colorVar[self.PlayerScoreIndex]) && IsDefined(colorVec[self.PlayerScoreIndex]) && colorVec[self.PlayerScoreIndex] == GetColorValues()[a]), GetColorNames()[a], &PlayerScoreColor, GetColorValues()[a], self.PlayerScoreIndex);
-            break;
-        
-        case "Players":
-            self addMenu(menu);
-
-                foreach(player in level.players)
-                {
-                    if(!IsDefined(player.accessLevel)) //If A Player Doesn't Have A Verification Set, They Won't Show. Mainly Happens If They Are Still Connecting
-                        player.accessLevel = GetAccessLevels()[1];
-                    
-                    self addOpt("[^2" + player.accessLevel + "^7]" + CleanName(player getName()), &newMenu, "Options");
-                }
-            break;
-        
-        case "All Players":
-        case "All Players Verification":
-        case "Clan Tag Options All Players":
-        case "All Players Model Manipulation":
-        case "All Players Malicious Options":
-            self PopulateAllPlayerOptions(menu);
-            break;
-        
-        case "Game Modes":
-            accessLevels = GetAccessLevels();
-            accessOptions = [];
-            
-            for(a = 2; a < (accessLevels.size - 2); a++)
-                accessOptions[accessOptions.size] = accessLevels[a];
-            
-            self addMenu(menu);
-                self addOptSlider("Mod Menu Lobby", &InitModMenuLobby, accessOptions);
-                self addOptSlider("Sharpshooter", &initSharpshooter, Array("Base Weapons", "Upgraded Weapons", "Both"));
-                self addOptSlider("All The Weapons", &initAllTheWeapons, Array("Base Weapons", "Upgraded Weapons", "Both"));
-            break;
-        
-        default:
-            
-            if(IsDefined(level.zombie_include_craftables) && level.zombie_include_craftables.size)
-                craftables = GetArrayKeys(level.zombie_include_craftables);
-
-            if(IsDefined(craftables) && craftables.size && isInArray(craftables, menu))
-            {
-                self addMenu(CleanString(menu));
-
-                    for(a = 0; a < craftables.size; a++)
-                    {
-                        if(craftables[a] != menu)
-                            continue;
-                        
-                        craftable = craftables[a];
-                        
-                        if(IsDefined(craftable))
-                        {
-                            if(!IsCraftableCollected(craftable))
-                            {
-                                self addOpt("Collect All", &CollectCraftableParts, craftable);
-                                self addOpt("");
-                            }
-                            
-                            if(IsDefined(level.zombie_include_craftables[craftable].a_piecestubs))
-                            {
-                                foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
-                                {
-                                    if(IsPartCollected(part))
-                                        continue;
-                                    
-                                    if(IsDefined(part.pieceSpawn.model))
-                                        self addOpt(CleanString(part.pieceSpawn.piecename), &CollectCraftablePart, part);
-                                }
-                            }
-                        }
-                    }
-            }
-            else
-            {
-                if(!IsDefined(self.SelectedPlayer))
-                    self.SelectedPlayer = self;
-                
-                self MenuOptionsPlayer(menu, self.SelectedPlayer);
-            }
-            break;
-    }
-}
-
-function MenuOptionsPlayer(menu, player)
-{
-    if(!IsDefined(player) || !IsPlayer(player))
-        menu = "404";
-    
-    switch(menu)
-    {
-        case "Basic Scripts":
-        case "Perk Menu":
-        case "Gobblegum Menu":
-        case "Visual Effects":
-            self PopulateBasicScripts(menu, player);
-            break;
-        
-        case "Teleport Menu":
-        case "Entity Teleports":            
-            self PopulateTeleportMenu(menu, player);
-            break;
-
-        case "Weaponry":
-        case "Weapon Options":
-        case "Weapon Loadout":
-        case "Weapon Camo":
-        case "Weapon Attachments":
-        case "Weapon AAT":
-        case "Equipment Menu":
-            self PopulateWeaponry(menu, player);
-            break;
-        
-        case "Bullet Menu":
-        case "Weapon Projectiles":
-        case "Equipment Bullets":
-        case "Bullet Effects":
-        case "Bullet Spawnables":
-        case "Explosive Bullets":
-            self PopulateBulletMenu(menu, player);
-            break;
-        
-        case "Fun Scripts":
-        case "Sound/Music":
-        case "Perk Jingles & Quotes":
-        case "Effects Man Options":
-        case "Hit Markers":
-        case "Force Field Options":
-            self PopulateFunScripts(menu, player);
-            break;
-        
-        case "Model Manipulation":
-            self PopulateModelManipulation(menu, player);
-            break;
-        
-        case "Aimbot Menu":
-            self PopulateAimbotMenu(menu, player);
-            break;
-        
-        case "Options":
-        case "Verification":
-        case "Model Attachment":
-        case "Malicious Options":
-        case "Disable Actions":
-            self PopulatePlayerOptions(menu, player);
-            break;
-        
-        default:
-            weapons = Array("Assault Rifles", "Sub Machine Guns", "Light Machine Guns", "Sniper Rifles", "Shotguns", "Pistols", "Launchers", "Specials");
-            MenuVOXCategory = [];
-
-            foreach(category, sound in level.sndplayervox)
-                array::add(MenuVOXCategory, CleanString(category, true), 0);
-            
-            if(isInArray(weapons, menu))
-            {
-                index = -1;
-
-                for(a = 0; a < weapons.size; a++)
-                {
-                    if(weapons[a] == menu)
-                        index = a;
-                }
-
-                self PopulateWeaponCategoryMenu(menu, index, player);
-            }
-            else if(isInArray(MenuVOXCategory, menu))
-            {
-                self PopulateFunScripts(menu, player);
-            }
-            else
-            {
-                error404 = true;
-
-                if(IsSubStr(menu, ReturnMapName() + " Teleports") || menu == ReturnMapName() + " Teleports")
-                {
-                    error404 = false;
-                    locations = GenerateMapTeleports();
-
-                    self addMenu(ReturnMapName() + " Teleports");
-                        
-                        if(IsDefined(locations) && locations.size)
-                        {
-                            for(a = 0; a < locations.size; a += 2)
-                                self addOpt(locations[a], &TeleportPlayer, locations[(a + 1)], player, undefined, locations[a]);
-                        }
-                }
-
-                if(error404)
-                {
-                    self addMenu("404 ERROR");
-                        self addOpt("Page Not Found");
-                }
-            }
-            break;
-    }
-}
-
-function PopulateWeaponCategoryMenu(menu, index, player)
-{
-    if(index < 0)
-        return;
-
-    self addMenu(menu);
-
-    weaponClasses = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
-    weaponReclass = Array("ar", "smg", "lmg", "sniper", "shotgun", "pistol", "launcher", "special");
-
-    foreach(weapon in GetArrayKeys(level.zombie_weapons))
-    {
-        if(!IsDefined(weapon) || weapon == level.weaponnone)
-            continue;
-        
-        if(Is_True(weapon.isgrenadeweapon) || IsSubStr(weapon.name, "knife") || IsSubStr(weapon.name, "upgraded"))
-            continue;
-        
-        zmClass = zm_utility::GetWeaponClassZM(weapon);
-        newClass = undefined;
-
-        if(zmClass == "weapon_pistol")
-        {
-            weapTok = StrTok(weapon.name, "_");
-            newClass = weapTok[0];
-
-            if(!isInArray(weaponReclass, newClass))
-            {
-                zmClass = "weapon_special";
-            }
-            else
-            {
-                for(a = 0; a < weaponReclass.size; a++)
-                {
-                    if(weaponReclass[a] == newClass)
-                        zmClass = "weapon_" + weaponClasses[a];
-                }
-            }
-        }
-
-        if(zmClass != "weapon_" + weaponClasses[index])
-            continue;
-
-        self addOptBool(player HasWeapon1(weapon), ((IsDefined(weapon.displayname) && MakeLocalizedString(weapon.displayname) != "") ? weapon.displayname : weapon.name), &GivePlayerWeapon, weapon, player);
-    }
-
-    if(menu == "Specials")
-    {
-        defaultWeapon = GetWeapon("defaultweapon");
-        minigun = GetWeapon("minigun");
-
-        self addOptBool(player HasWeapon1(defaultWeapon), "Default Weapon", &GivePlayerWeapon, defaultWeapon, player);
-        self addOptBool(player HasWeapon1(minigun), minigun.displayname, &GivePlayerWeapon, minigun, player);
-
-        if(ReturnMapName() == "Shadows Of Evil")
-        {
-            teslaGun = GetWeapon("tesla_gun");
-            self addOptBool(player HasWeapon1(teslaGun), teslaGun.displayname, &GivePlayerWeapon, teslaGun, player);
-        }
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//base.gsc
-#define OPT_NAME 0
-#define OPT_FUNC 1
-#define OPT_IN1 2
-#define OPT_IN2 3
-#define OPT_IN3 4
-#define OPT_IN4 5
-#define OPT_BOOL 6
-#define OPT_BOOLOPT 7
-#define OPT_SHADER 8
-#define OPT_COLOR 9
-#define OPT_INCSLIDER 10
-#define OPT_MIN 11
-#define OPT_MAX 12
-#define OPT_START 13
-#define OPT_INCREMENT 14
-#define OPT_SLIDER 15
-#define OPT_SLIDERVALUES 16
-
-function menuMonitor()
-{
-    if(Is_True(self.menuMonitor))
-        return;
-    self.menuMonitor = true;
-
-    self endon("endMenuMonitor");
-    self endon("disconnect");
-
-    while(1)
-    {
-        if(self hasMenu() && !Is_True(self.DisableMenuControls))
-        {
-            if(!self isInMenu(true))
-            {
-                self.menuUI = [];
-                
-                if(self AreButtonsPressed(self.OpenControls) && Is_Alive(self))
-                {
-                    self openMenu1();
-                    wait 0.5;
-                }
-                else if(Is_Alive(self) && self AreButtonsPressed(self.QuickControls) || !Is_Alive(self) && self AdsButtonPressed() && self JumpButtonPressed())
-                {
-                    if(!Is_True(self.DisableQM))
-                    {
-                        self openQuickMenu1();
-                        wait 0.5;
-                    }
-                }
-            }
-            else
-            {
-                if(self isInMenu(false) && !Is_Alive(self))
-                    self closeMenu1();
-                
-                if(ReturnMapName() != "Origins")
-                    self SetActionSlot(3, "");
-                
-                self SetActionSlot(1, "");
-
-                if(Is_True(self.MenuNoTarget))
-                    self.ignoreme = true;
-
-                menu = self getCurrent();
-                curs = self getCursor();
-
-                if((self AdsButtonPressed() || self ActionSlotOneButtonPressed()) && !(self AttackButtonPressed() || self ActionSlotTwoButtonPressed()) || (self AttackButtonPressed() || self ActionSlotTwoButtonPressed()) && !(self AdsButtonPressed() || self ActionSlotOneButtonPressed()))
-                {
-                    dir = ((self AdsButtonPressed() || self ActionSlotOneButtonPressed()) ? -1 : 1);
-
-                    self setCursor(curs + dir);
-                    self ScrollingSystem(dir, curs);
-
-                    wait (self.ScrollAnimationTime + 0.025);
-                }
-                else if(self UseButtonPressed())
-                {
-                    if(IsDefined(self.menuStructure) && IsDefined(self.menuStructure[curs]) && IsDefined(self GetOption(curs, OPT_FUNC)))
-                    {
-                        optSlider = self GetOption(curs, OPT_SLIDER);
-                        optIncSlider = self GetOption(curs, OPT_INCSLIDER);
-                        sliderValues = self GetOption(curs, OPT_SLIDERVALUES);
-
-                        if(Is_True(optSlider) || Is_True(optIncSlider))
-                        {
-                            self ExeFunction(self GetOption(curs, OPT_FUNC), (Is_True(optSlider) ? sliderValues[self.menuSlider[menu][curs]] : self.menuSlider[menu][curs]), self GetOption(curs, OPT_IN1), self GetOption(curs, OPT_IN2), self GetOption(curs, OPT_IN3), self GetOption(curs, OPT_IN4));
-                        }
-                        else
-                        {
-                            self ExeFunction(self GetOption(curs, OPT_FUNC), self GetOption(curs, OPT_IN1), self GetOption(curs, OPT_IN2), self GetOption(curs, OPT_IN3), self GetOption(curs, OPT_IN4));
-                            boolOpt = self GetOption(curs, OPT_BOOLOPT);
-
-                            if(IsDefined(self.menuStructure) && IsDefined(self.menuStructure[curs]) && Is_True(boolOpt))
-                            {
-                                wait 0.18;
-                                self RefreshMenu(menu, curs); //This Will Refresh That Bool Option For Every Player That Is Able To See It.
-                            }
-                        }
-
-                        wait 0.2;
-                    }
-                }
-                else if(self ActionslotThreeButtonPressed() && !self ActionSlotFourButtonPressed() || self ActionslotFourButtonPressed() && !self ActionSlotThreeButtonPressed())
-                {
-                    optSlider = self GetOption(curs, OPT_SLIDER);
-                    optIncSlider = self GetOption(curs, OPT_INCSLIDER);
-                    
-                    if(IsDefined(self.menuStructure) && (Is_True(optSlider) || Is_True(optIncSlider))) 
-                    {
-                        dir = (self ActionslotThreeButtonPressed() ? -1 : 1);
-
-                        if(Is_True(optSlider))
-                            self SetSlider(dir);
-                        else
-                            self SetIncSlider(dir);
-                        
-                        wait 0.13;
-                    }
-                }
-                else if(self MeleeButtonPressed() || !Is_Alive(self) && self JumpButtonPressed())
-                {
-                    if(menu == "Main" || menu == "Quick Menu")
-                    {
-                        if(self isInQuickMenu())
-                            self closeQuickMenu();
-                        else
-                            self closeMenu1();
-                    }
-                    else
-                    {
-                        if(Is_True(self.QuickExit))
-                        {
-                            goal = 10;
-                            count = 0;
-
-                            while(self MeleeButtonPressed())
-                            {
-                                count++;
-
-                                if(count >= goal)
-                                    break;
-                                
-                                wait 0.01;
-                            }
-
-                            if(count >= goal)
-                            {
-                                if(self isInQuickMenu())
-                                    self closeQuickMenu();
-                                else
-                                    self closeMenu1();
-                            }
-                            else
-                            {
-                                self newMenu();
-                            }
-                        }
-                        else
-                        {
-                            self newMenu();
-                        }
-                    }
-
-                    wait 0.2;
-                }
-            }
-        }
-
-        wait 0.05;
-    }
-}
-
-function ExeFunction(fnc, i1, i2, i3, i4, i5, i6)
-{
-    self endon("disconnect");
-
-    if(!IsDefined(fnc))
-        return;
-    
-    if(IsDefined(i6))
-        return self thread [[ fnc ]](i1, i2, i3, i4, i5, i6);
-    
-    if(IsDefined(i5))
-        return self thread [[ fnc ]](i1, i2, i3, i4, i5);
-    
-    if(IsDefined(i4))
-        return self thread [[ fnc ]](i1, i2, i3, i4);
-    
-    if(IsDefined(i3))
-        return self thread [[ fnc ]](i1, i2, i3);
-    
-    if(IsDefined(i2))
-        return self thread [[ fnc ]](i1, i2);
-    
-    if(IsDefined(i1))
-        return self thread [[ fnc ]](i1);
-
-    return self thread [[ fnc ]]();
-}
-
-function openMenu1(showAnim = true)
-{
-    self endon("disconnect");
-
-    self.isInMenu = true;
-    wait 0.05;
-
-    if(!IsDefined(self.currentMenu) || self.currentMenu == "")
-        self.currentMenu = "Main";
-    
-    if(!IsDefined(self.menu_parent))
-        self.menu_parent = [];
-
-    if(isInArray(self.menu_parent, "Players") && IsDefined(self.SavedSelectedPlayer))
-        self.SelectedPlayer = self.SavedSelectedPlayer;
-
-    self createMenuHud();
-    self drawText(showAnim);
-
-    if(self getCurrent() == "Players" && !Is_True(self.PlayerInfoHandler))
-        self thread PlayerInfoHandler();
-}
-
-function closeMenu1(showAnim = false)
-{
-    self endon("disconnect");
-
-    if(self isInQuickMenu())
-    {
-        self closeQuickMenu();
-        return;
-    }
-
-    if(!self isInMenu())
-        return;
-    
-    self notify("menuClosed");
-    self.CreditsPlaying = undefined;
-
-    destroyAll(self.menuUI);
-    self.menuUI = undefined;
-    self.menuStructure = undefined;
-
-    if(Is_True(self.isInMenu))
-        self.isInMenu = BoolVar(self.isInMenu);
-
-    self.DisableMenuControls = undefined;
-
-    if(ReturnMapName() != "Origins")
-        self SetActionSlot(3, "altMode");
-    
-    if(IsDefined(self.bgb) && self.bgb != "none")
-        self SetActionSlot(1, "bgb");
-
-    if(!Is_True(self.playerIgnoreMe) && Is_True(self.MenuNoTarget))
-        self.ignoreme = false;
-}
-
-function openQuickMenu1()
-{
-    self endon("disconnect");
-
-    self.isInQuickMenu = true;
-    self.SelectedPlayer = self;
-
-    if(!IsDefined(self.menu_parentQM))
-        self.menu_parentQM = [];
-
-    if(!IsDefined(self.currentMenuQM))
-        self.currentMenuQM = "Quick Menu";
-    
-    self createMenuHud();
-    self drawText(true);
-}
-
-function closeQuickMenu()
-{
-    if(!self isInQuickMenu())
-        return;
-    
-    self endon("disconnect");
-
-    destroyAll(self.menuUI);
-    self.menuUI = undefined;
-    self.menuStructure = undefined;
-
-    if(Is_True(self.isInQuickMenu))
-        self.isInQuickMenu = BoolVar(self.isInQuickMenu);
-    
-    self.DisableMenuControls = undefined;
-
-    if(ReturnMapName() != "Origins")
-        self SetActionSlot(3, "altMode");
-    
-    if(IsDefined(self.bgb) && self.bgb != "none")
-        self SetActionSlot(1, "bgb");
-
-    if(!Is_True(self.playerIgnoreMe) && Is_True(self.MenuNoTarget))
-        self.ignoreme = false;
-}
-
-function drawText(showAnim = false)
-{
-    self endon("menuClosed");
-    self endon("disconnect");
-
-    self DestroyOpts();
-    self RunMenuOptions(self getCurrent());
-    self SetMenuTitle();
-
-    if(!IsDefined(self.menuStructure) || !self.menuStructure.size)
-        self addOpt("No Options Found");
-    
-    cursor = self getCursor();
-    maxOptions = self GetMaxOptions();
-    
-    if(!IsDefined(cursor))
-        self setCursor(0);
-    
-    if(self getCursor() >= self.menuStructure.size)
-        self setCursor((self.menuStructure.size - 1));
-    
-    numOpts = ((self.menuStructure.size > maxOptions) ? maxOptions : self.menuStructure.size);
-    start = self GetScrollStart(self getCursor());
-    
-    self.saved_hudcount = self.hud_count;
-
-    if(!IsDefined(self.menuUI["text"])) self.menuUI["text"] = [];
-    if(!IsDefined(self.menuUI["subMenu"])) self.menuUI["subMenu"] = [];
-    if(!IsDefined(self.menuUI["BoolOpt"])) self.menuUI["BoolOpt"] = [];
-    if(!IsDefined(self.menuUI["BoolBack"])) self.menuUI["BoolBack"] = [];
-    if(!IsDefined(self.menuUI["BoolText"])) self.menuUI["BoolText"] = [];
-    if(!IsDefined(self.menuUI["IntSlider"])) self.menuUI["IntSlider"] = [];
-    if(!IsDefined(self.menuUI["StringSlider"])) self.menuUI["StringSlider"] = [];
-    if(!IsDefined(self.menuUI["invalidOption"])) self.menuUI["invalidOption"] = [];
-
-    offset = ((self.MenuDesign == "Classic") ? 11 : ((self.MenuDesign == "AIO") ? 15 : ((self.MenuDesign == "Physics 'n' Flex") ? 24 : 8)));
-    startY = (self.menuUI["background"].y + offset);
-
-    for(a = 0; a < numOpts; a++)
-        self createOption((start + a), (startY + (a * 18)), ((start + a) == self getCursor()), false);
-
-    if(!IsDefined(self.menuUI["text"][self getCursor()]))
-        self.menuCursor[self getCurrent()] = (self.menuStructure.size - 1);
-    
-    if(IsDefined(self.menuUI["scroller"]) && IsDefined(self.menuUI["text"][self getCursor()]))
-    {
-        scrollOffset = ((self.MenuDesign == "AIO") ? 11 : 8);
-        self.menuUI["scroller"].y = (self.menuUI["text"][self getCursor()].y - scrollOffset);
-
-        if(IsDefined(self.menuUI["cursIndex"]))
-        {
-            self.menuUI["cursIndex"] SetValue(self getCursor() + 1);
-            self.menuUI["optCount"] SetValue(self.menuStructure.size);
-
-            if(IsDefined(self.menuUI["cursIndex"]))
-            {
-                posOffset = ((self.menuStructure.size >= 10) ? 16 : 12);
-
-                self.menuUI["counterSep"].x = self.menuUI["background"].x + (self.menuUI["background"].width - posOffset);
-                self.menuUI["cursIndex"].x = self.menuUI["counterSep"].x - 3;
-                self.menuUI["optCount"].x = self.menuUI["counterSep"].x + 3;
-            }
-        }
-    }
-
-    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["text"]) && self.menuUI["text"].size)
-    {
-        heightOffset = ((self.MenuDesign == "Classic") ? 25 : ((self.MenuDesign == "AIO") ? 31 : ((self.MenuDesign == "Physics 'n' Flex") ? 34 : 18)));
-
-        if(IsDefined(self.menuUI["background"]))
-            self.menuUI["background"] SetShaderValues(undefined, undefined, (heightOffset + (18 * (self.menuUI["text"].size - 1))));
-
-        if(IsDefined(self.menuUI["banner"]) && (self.MenuDesign == GetMenuName() || self.MenuDesign == "Classic"))
-        {
-            bannerOffset = ((self.MenuDesign == GetMenuName()) ? 35 : 14);
-            self.menuUI["banner"] SetShaderValues(undefined, undefined, bannerOffset + self.menuUI["background"].height);
-        }
-
-        if(IsDefined(self.menuUI["bottomLine"]))
-        {
-            self.menuUI["bottomLine"].y = (self.menuUI["background"].y + self.menuUI["background"].height);
-
-            if(IsDefined(self.menuUI["cursIndex"]))
-            {
-                self.menuUI["counterSep"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
-                self.menuUI["cursIndex"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
-                self.menuUI["optCount"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
-            }
-
-            if(self.MenuDesign == "AIO")
-            {
-                if(IsDefined(self.menuUI["menuName"]))
-                    self.menuUI["menuName"].y = (self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1));
-                
-                if(IsDefined(self.menuUI["backgroundouter"]))
-                    self.menuUI["backgroundouter"] SetShaderValues(undefined, undefined, (4 + (self.menuUI["background"].height + self.menuUI["separator"].height + self.menuUI["bottomLine"].height)));
-            }
-        }
-    }
-}
-
-function createOption(index = 0, optY = 0, selected = false, fadeIn = false)
-{
-    boolVal = self GetOption(index, OPT_BOOL);
-    boolOpt = self GetOption(index, OPT_BOOLOPT);
-    optName = self GetOption(index, OPT_NAME);
-    optFunc = self GetOption(index, OPT_FUNC);
-    optSlider = self GetOption(index, OPT_SLIDER);
-    optIncSlider = self GetOption(index, OPT_INCSLIDER);
-    sliderValues = self GetOption(index, OPT_SLIDERVALUES);
-
-    fontColor = ((!selected || self.MenuDesign == "Native" || self.MenuDesign == "Classic" || self.MenuDesign == "Physics 'n' Flex" || !Is_True(self.ColoredCursor)) ? (1, 1, 1) : self.MainTheme);
-    fontScale = ((Is_True(self.LargeCursor) && selected) ? 1.2 : 1);
-    alpha = (Is_True(fadeIn) ? 0 : ((Is_True(self.SpotlightCursor) && !selected) ? 0.4 : 1));
-    optX = (self.menuUI["background"].x + 4);
-
-    if(Is_True(boolOpt) && self.BoolDisplay != "Text Color")
-    {
-        if(self.BoolDisplay == "Boxes")
-        {
-            boxX = ((self.BoolLocation == "Left") ? (self.menuUI["background"].x + 9) : (self.menuUI["background"].x + (self.menuUI["background"].width - 8)));
-
-            self.menuUI["BoolBack"][index] = self createRectangle("CENTER", "CENTER", boxX, optY, 10, 10, (0.25, 0.25, 0.25), 5, alpha, "white");
-            self.menuUI["BoolOpt"][index] = self createRectangle("CENTER", "CENTER", boxX, optY, 8, 8, (Is_True(boolVal) ? self.MainTheme : (0, 0, 0)), 6, alpha, "white");
-            
-            if(self.BoolLocation == "Left")
-                optX = ((self.menuUI["BoolBack"][index].x + (self.menuUI["BoolBack"][index].width / 2)) + 4);
-        }
-        else
-        {
-            self.menuUI["BoolText"][index] = self createText("default", fontScale, 5, (Is_True(boolVal) ? "ON" : "OFF"), "RIGHT", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
-        }
-    }
-
-    if(IsDefined(optFunc) && optFunc == &newMenu)
-        self.menuUI["subMenu"][index] = self createText("default", fontScale, 5, ">", "RIGHT", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
-
-    if(Is_True(optIncSlider))
-        self.menuUI["IntSlider"][index] = self createText("default", fontScale, 5, self.menuSlider[self getCurrent()][index], "RIGHT", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
-
-    if(Is_True(optSlider))
-        self.menuUI["StringSlider"][index] = self createText("default", fontScale, 5, "< " + sliderValues[self.menuSlider[self getCurrent()][index]] + " > [" + (self.menuSlider[self getCurrent()][index] + 1) + "/" + sliderValues.size + "]", "RIGHT", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
-
-    self.menuUI["text"][index] = self createText("default", fontScale, 5, optName, "LEFT", "CENTER", optX, optY, alpha, ((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : fontColor));
-
-    if(IsInvalidOption(optName))
-        self.menuUI["invalidOption"][index] = self createRectangle("CENTER", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width / 2)), optY, (self.MenuWidth - 60), 1, self.MainTheme, 5, 0.4, "white");
-}
-
-function ScrollingSystem(dir, OldCurs)
-{
-    self endon("menuClosed");
-    self endon("disconnect");
-
-    curs = self getCursor();
-    hud = Array("text", "BoolOpt", "BoolBack", "BoolText", "subMenu", "IntSlider", "StringSlider", "invalidOption");
-    size = self.menuStructure.size;
-    maxOptions = self GetMaxOptions();
-    time = self.ScrollAnimationTime;
-
-    if(curs < 0 || curs > (size - 1))
-    {
-        self setCursor(((curs < 0) ? (size - 1) : 0));
-
-        curs = self getCursor();
-        OldCurs = curs;
-
-        if(size > maxOptions)
-        {
-            self RefreshMenu();
-            return;
-        }
-    }
-    else
-    {
-        oldStart = self GetScrollStart(OldCurs);
-        newStart = self GetScrollStart(curs);
-
-        if(size > maxOptions && oldStart != newStart)
-        {
-            diff = (newStart - oldStart);
-
-            if(diff != 1 && diff != -1)
-            {
-                self RefreshMenu();
-                return;
-            }
-
-            scrollDown = (newStart > oldStart);
-            anchorRow = (scrollDown ? ((oldStart + maxOptions) - 1) : oldStart);
-
-            if(!IsDefined(self.menuUI["text"][anchorRow]))
-            {
-                self RefreshMenu();
-                return;
-            }
-
-            remove = (scrollDown ? oldStart : ((oldStart + maxOptions) - 1));
-            create = (scrollDown ? (oldStart + maxOptions) : (oldStart - 1));
-            optsStart = (scrollDown ? (oldStart + 1) : oldStart);
-            optsEnd = (scrollDown ? ((oldStart + maxOptions) - 1) : ((oldStart + maxOptions) - 2));
-
-            optY = self.menuUI["text"][anchorRow].y;
-            offset = 0;
-
-            for(a = 0; a < hud.size; a++)
-            {
-                if(IsDefined(self.menuUI[hud[a]][remove]))
-                {
-                    if(time > 0)
-                        self.menuUI[hud[a]][remove] thread hudFadeDestroy(0, time);
-                    else
-                        self.menuUI[hud[a]][remove] hudFadeDestroy(0, time);
-
-                    offset++;
-                }
-            }
-
-            self.hud_count = (self.saved_hudcount + offset);
-
-            for(a = optsStart; a <= optsEnd; a++)
-            {
-                for(b = 0; b < hud.size; b++)
-                {
-                    if(IsDefined(self.menuUI[hud[b]][a]))
-                    {
-                        self.menuUI[hud[b]][a].archived = self ShouldArchive();
-                        newY = (scrollDown ? (self.menuUI[hud[b]][a].y - 18) : (self.menuUI[hud[b]][a].y + 18));
-                        self.hud_count++;
-
-                        if(self.menuUI[hud[b]][a].y != newY)
-                            self.menuUI[hud[b]][a] thread hudMoveY(newY, time);
-                    }
-                }
-            }
-
-            self createOption(create, optY, self getCursor() == create, true);
-
-            for(a = 0; a < hud.size; a++)
-            {
-                if(IsDefined(self.menuUI[hud[a]][create]))
-                    self.menuUI[hud[a]][create] thread hudFade(((Is_True(self.SpotlightCursor) && create != curs || hud[a] == "invalidOption") ? 0.4 : 1), time);
-            }
-        }
-    }
-
-    if(IsDefined(self.menuStructure[curs]) && IsInvalidOption(self GetOption(curs, OPT_NAME)))
-    {
-        wait (time / 2);
-        self setCursor(curs + dir);
-
-        if(oldStart != newStart)
-        {
-            self RefreshMenu();
-            return;
-        }
-
-        return self ScrollingSystem(dir, curs);
-    }
-
-    for(a = 0; a < size; a++)
-    {
-        for(b = 0; b < hud.size; b++)
-        {
-            if(!IsDefined(self.menuUI[hud[b]][a]) || hud[b] == "invalidOption" || Is_True(self.menuUI[hud[b]][a].fadeDestroy))
-                continue;
-            
-            if(hud[b] != "BoolOpt" && hud[b] != "BoolBack")
-            {
-                boolVal = self GetOption(a, OPT_BOOL);
-                boolOpt = self GetOption(a, OPT_BOOLOPT);
-
-                self.menuUI[hud[b]][a] hudFadeColor(((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((curs != a || self.MenuDesign == "Native" || self.MenuDesign == "Classic" || self.MenuDesign == "Physics 'n' Flex" || !Is_True(self.ColoredCursor)) ? (1, 1, 1) : self.MainTheme)), time);
-                self.menuUI[hud[b]][a] ChangeFontscaleOverTime1(((Is_True(self.LargeCursor) && curs == a) ? 1.2 : 1), time);
-            }
-
-            self.menuUI[hud[b]][a] thread hudFade(((Is_True(self.SpotlightCursor) && a != curs || hud[b] == "invalidOption") ? 0.4 : 1), time);
-        }
-    }
-    
-    scrollOffset = ((self.MenuDesign == "AIO") ? 11 : 8);
-    scrollPos = (self.menuUI["text"][curs].y - scrollOffset);
-
-    if(IsDefined(self.menuUI["scroller"]) && IsDefined(self.menuUI["text"][curs]) && self.menuUI["scroller"].y != scrollPos)
-        self.menuUI["scroller"] thread hudMoveY(scrollPos, time);
-    
-    if(IsDefined(self.menuUI["cursIndex"]))
-        self.menuUI["cursIndex"] SetValue(curs + 1);
-}
-
-function GetScrollStart(cursor)
-{
-    if(!IsDefined(self.menuStructure) || !self.menuStructure.size)
-        return 0;
-
-    size = self.menuStructure.size;
-    maxOptions = self GetMaxOptions();
-
-    if(size <= maxOptions)
-        return 0;
-
-    sub = Int((maxOptions - 1) / 2);
-    add = Int((maxOptions + 1) / 2);
-
-    if(cursor <= sub)
-        return 0;
-
-    if(cursor >= (size - add))
-        return (size - maxOptions);
-
-    return (cursor - sub);
-}
-
-function SoftLockMenu(bgHeight = 100, hideScroller = false)
-{
-    if(!self hasMenu() || self hasMenu() && !self isInMenu())
-        return;
-
-    self endon("disconnect");
-
-    self.DisableMenuControls = true;
-    self DestroyOpts();
-
-    destroyHud = Array("counterSep", "cursIndex", "optCount");
-
-    for(a = 0; a < destroyHud.size; a++)
-    {
-        if(IsDefined(self.menuUI[destroyHud[a]]))
-            self.menuUI[destroyHud[a]] DestroyHud();
-    }
-
-    if(IsDefined(self.menuUI["scroller"]) && hideScroller)
-        self.menuUI["scroller"].alpha = 0;
-
-    if(IsDefined(self.menuUI["background"]))
-        self.menuUI["background"] SetShaderValues(undefined, self.MenuWidth, bgHeight);
-    
-    if(IsDefined(self.menuUI["banner"]) && (self.MenuDesign == GetMenuName() || self.MenuDesign == "Classic"))
-    {
-        bannerOffset = ((self.MenuDesign == GetMenuName()) ? 35 : 14);
-        self.menuUI["banner"] SetShaderValues(undefined, undefined, bannerOffset + self.menuUI["background"].height);
-    }
-
-    if(IsDefined(self.menuUI["bottomLine"]))
-        self.menuUI["bottomLine"].y = self.menuUI["background"].y + (self.menuUI["background"].height - 1);
-
-    if(self.MenuDesign == "AIO")
-    {
-        if(IsDefined(self.menuUI["menuName"]))
-            self.menuUI["menuName"].y = self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1);
-        
-        if(IsDefined(self.menuUI["backgroundouter"]))
-            self.menuUI["backgroundouter"] SetShaderValues(undefined, undefined, ((self.menuUI["background"].height + 23) + self.menuUI["bottomLine"].height));
-    }
-}
-
-function SoftUnlockMenu()
-{
-    if(!self hasMenu() || !self isInMenu())
-        return;
-    
-    self endon("disconnect");
-    
-    self.CreditsPlaying = undefined;
-
-    self closeMenu1();
-    self.DisableMenuControls = true;
-
-    self openMenu1();
-    wait 0.1;
-
-    self.DisableMenuControls = undefined;
-}
-
-function SetMenuTitle(title)
-{
-    self endon("disconnect");
-
-    if(!IsDefined(self.menuUI["title"]))
-        return;
-
-    if(!IsDefined(title))
-        title = self.menuTitle;
-
-    self.menuUI["title"] SetTextString(title);
-}
-
-function RefreshMenu(menu, curs, force)
-{
-    self endon("disconnect");
-
-    if(IsDefined(menu) && !IsDefined(curs) || !IsDefined(menu) && IsDefined(curs))
-        return;
-    
-    if(IsDefined(menu) && IsDefined(curs))
-    {
-        foreach(player in level.players)
-        {
-            if(!IsDefined(player) || !IsDefined(player.menuUI) || !player hasMenu() || !player isInMenu(true) || Is_True(player.DisableMenuControls))
-                continue;
-            
-            if(player getCurrent() == menu || self != player && player PlayerHasOption(self, menu, curs))
-            {
-                if(IsDefined(player.menuUI["text"][curs]) || player == self && player getCurrent() == menu && IsDefined(player.menuUI["text"][curs]) || self != player && player PlayerHasOption(self, menu, curs) || IsDefined(force) && force)
-                    player drawText();
-            }
-        }
-    }
-    else
-    {
-        if(IsDefined(self) && self hasMenu() && self isInMenu(true) && !Is_True(self.DisableMenuControls))
-        {
-            self drawText();
-        }
-    }
-}
-
-function PlayerHasOption(source, menu, curs)
-{
-    option = source GetOption(curs, OPT_NAME);
-
-    if(IsDefined(self.menuStructure) && self.menuStructure.size && IsDefined(option))
-    {
-        for(a = 0; a < self.menuStructure.size; a++)
-        {
-            if(option == self GetOption(a, OPT_NAME) && (source.SelectedPlayer == self || self.SelectedPlayer == self && source.SelectedPlayer == source && self getCurrent() == menu))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-function DestroyOpts()
-{
-    self endon("disconnect");
-    
-    if(!IsDefined(level.menuHudKeys))
-        level.menuHudKeys = Array("text", "BoolOpt", "BoolBack", "BoolText", "subMenu", "IntSlider", "StringSlider", "invalidOption");
-    
-    hud = level.menuHudKeys;
-    
-    if(IsDefined(self.menuUI) && self.menuUI.size)
-    {
-        for(a = 0; a < hud.size; a++)
-        {
-            if(IsDefined(self.menuUI[hud[a]]) && self.menuUI[hud[a]].size)
-            {
-                destroyAll(self.menuUI[hud[a]]);
-                self.menuUI[hud[a]] = undefined;
-            }
-        }
-    }
-
-    self.menuStructure = undefined;
-}
-
-function IsInvalidOption(text)
-{
-    if(!IsDefined(text))
-        return true;
-    
-    if(!IsDefined(text.size)) //.size of localized string will be undefined -- Even if the string = "" the size should be 0
-        return false;
-    
-    if(text == "")
-        return true;
-    
-    for(a = 0; a < text.size; a++)
-    {
-        if(text[a] != " ")
-            return false;
-    }
-    
-    return true;
-}
-
-function BackMenu()
-{
-    if(!self isInQuickMenu())
-    {
-        if(IsDefined(self.menu_parent) && self.menu_parent.size)
-            return self.menu_parent[(self.menu_parent.size - 1)];
-        
-        return "Main";
-    }
-
-    if(IsDefined(self.menu_parentQM) && self.menu_parentQM.size)
-        return self.menu_parentQM[(self.menu_parentQM.size - 1)];
-    
-    return "Quick Menu";
-}
-
-function isInMenu(iqm)
-{
-    return Is_True(self.isInMenu) || Is_True(iqm) && Is_True(self.isInQuickMenu);
-}
-
-function isInQuickMenu()
-{
-    return Is_True(self.isInQuickMenu);
-}
-
-function getCurrent()
-{
-    if(self isInQuickMenu())
-        return self.currentMenuQM;
-
-    return self.currentMenu;
-}
-
-function getCursor()
-{
-    if(!IsDefined(self.menuCursor))
-        self.menuCursor = [];
-    
-    if(!IsDefined(self.menuCursor[self getCurrent()]))
-        self.menuCursor[self getCurrent()] = 0;
-    
-    return self.menuCursor[self getCurrent()];
-}
-
-function setCursor(curs)
-{
-    if(!IsDefined(self.menuCursor))
-        self.menuCursor = [];
-    
-    self.menuCursor[self getCurrent()] = curs;
-}
-
-function SetSlider(dir)
-{
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    if(!IsDefined(self.menuSlider))
-        self.menuSlider = [];
-    
-    if(!IsDefined(self.menuSlider[menu]))
-        self.menuSlider[menu] = [];
-    
-    if(!IsDefined(self.menuSlider[menu][curs]))
-        self.menuSlider[menu][curs] = 0;
-
-    sliderValues = self GetOption(curs, OPT_SLIDERVALUES);
-
-    if(!IsDefined(sliderValues) || !sliderValues.size)
-        sliderValues = Array("invalid slider");
-
-    max = (sliderValues.size - 1);
-
-    self.menuSlider[menu][curs] += ((!IsDefined(dir) || !IsInt(dir) || dir > 0) ? 1 : -1);
-    
-    if((self.menuSlider[menu][curs] > max) || (self.menuSlider[menu][curs] < 0))
-        self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] > max) ? 0 : max);
-    
-    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["StringSlider"]) && IsDefined(self.menuUI["StringSlider"][curs]))
-        self.menuUI["StringSlider"][curs] SetTextString("< " + sliderValues[self.menuSlider[menu][curs]] + " > [" + (self.menuSlider[menu][curs] + 1) + "/" + sliderValues.size + "]");
-}
-
-function SetIncSlider(dir)
-{
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    if(!IsDefined(self.menuSlider))
-        self.menuSlider = [];
-    
-    if(!IsDefined(self.menuSlider[menu]))
-        self.menuSlider[menu] = [];
-    
-    if(!IsDefined(self.menuSlider[menu][curs]))
-        self.menuSlider[menu][curs] = 0;
-    
-    val = self GetOption(curs, OPT_INCREMENT);
-    max = self GetOption(curs, OPT_MAX);
-    min = self GetOption(curs, OPT_MIN);
-    
-    if(self.menuSlider[menu][curs] < max && (self.menuSlider[menu][curs] + val) > max || (self.menuSlider[menu][curs] > min) && (self.menuSlider[menu][curs] - val) < min)
-        self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] < max && (self.menuSlider[menu][curs] + val) > max) ? max : min);
-    else
-        self.menuSlider[menu][curs] += ((!IsDefined(dir) || !IsInt(dir) || dir > 0) ? val : (val * -1));
-    
-    if((self.menuSlider[menu][curs] > max) || (self.menuSlider[menu][curs] < min))
-        self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] > max) ? min : max);
-    
-    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["IntSlider"]) && IsDefined(self.menuUI["IntSlider"][curs]))
-        self.menuUI["IntSlider"][curs] SetValue(self.menuSlider[menu][curs]);
-}
-
-function newMenu(menu, dontSave, i1)
-{
-    self endon("disconnect");
-    self notify("EndSwitchWeaponMonitor");
-    self endon("menuClosed");
-
-    if(!IsDefined(self.menu_parent))
-        self.menu_parent = [];
-    
-    if(!IsDefined(self.menu_parentQM))
-        self.menu_parentQM = [];
-
-    if(self getCurrent() == "Players" && IsDefined(menu))
-    {
-        player = level.players[self getCursor()];
-
-        //This will make it so only the host developers can access the host's player options. Also, only the developers can access other developer's player options.
-        if(player IsHost() && !self IsHost() && !self IsDeveloper() || player isDeveloper() && !self isDeveloper())
-            return self iPrintlnBold("^1ERROR: ^7Access Denied");
-
-        self.SelectedPlayer = player;
-        self.SavedSelectedPlayer = player; //Fix for force closing the menu while navigating a players options and opening the quick menu.
-    }
-    else if(self getCurrent() == "Players" && !IsDefined(menu))
-    {
-        self.SelectedPlayer = self;
-    }
-    else if(self isInMenu(false) && isInArray(self.menu_parent, "Players"))
-    {
-        self.SelectedPlayer = self.SavedSelectedPlayer;
-    }
-    
-    if(!IsDefined(menu))
-    {
-        menu = self BackMenu();
-        
-        if(!self isInQuickMenu())
-            self.menu_parent[(self.menu_parent.size - 1)] = undefined;
-        else
-            self.menu_parentQM[(self.menu_parentQM.size - 1)] = undefined;
-    }
-    else
-    {
-        if(!IsDefined(dontSave) || IsDefined(dontSave) && !dontSave)
-        {
-            if(!self isInQuickMenu())
-                self.menu_parent[self.menu_parent.size] = self getCurrent();
-            else
-                self.menu_parentQM[self.menu_parentQM.size] = self getCurrent();
-        }
-    }
-
-    for(a = 0; a < self.menuStructure.size; a++)
-    {
-        optIncSlider = self GetOption(a, OPT_INCSLIDER);
-
-        if(!IsDefined(self.menuStructure[a]) || !Is_True(optIncSlider) || !IsDefined(self.menuSlider) || !IsDefined(self.menuSlider[menu]))
-            continue;
-        
-        optStart = self GetOption(a, OPT_START);
-
-        if(IsDefined(self.menuSlider[menu][a]) && IsDefined(optStart) && self.menuSlider[menu][a] == optStart)
-            self.menuSlider[menu][a] = undefined;
-    }
-    
-    if(!self isInQuickMenu())
-        self.currentMenu = menu;
-    else
-        self.currentMenuQM = menu;
-
-    refresh = (IsVerkoMap() ? Array("Weaponry") : Array("Weapon Options", "Weapon Attachments", "Weapon AAT"));
-
-    if(isInArray(refresh, menu)) //Submenus that should be refreshed when player switches weapons
-    {
-        player = self.SelectedPlayer;
-
-        if(IsDefined(player))
-            player thread WatchMenuWeaponSwitch(menu, self);
-    }
-
-    if(menu == "Players" && !Is_True(self.PlayerInfoHandler))
-        self thread PlayerInfoHandler();
-    
-    if(isDefined(i1))
-    {
-        self.EntityEditorNumber = i1;
-    }
-    
-    self drawText();
-}
-
-function WatchMenuWeaponSwitch(menu, player)
-{
-    self endon("disconnect");
-    player endon("disconnect");
-    player endon("menuClosed");
-    player endon("EndSwitchWeaponMonitor");
-
-    while(player getCurrent() == menu)
-    {
-        self waittill("weapon_change", newWeapon);
-
-        if(player getCurrent() == menu)
-            player RefreshMenu(player getCurrent(), player getCursor(), true);
-    }
-}
-
-function PlayerInfoHandler()
-{
-    if(Is_True(self.PlayerInfoHandler) || Is_True(level.DisablePlayerInfo))
-        return;
-    self.PlayerInfoHandler = true;
-
-    self endon("disconnect");
-    self endon("EndPlayerInfoHandler");
-
-    wait 0.1; //buffer (needed)
-    bgTempX = 0;
-
-    self.playerInfoHud = [];
-
-    while(self isInMenu() && self getCurrent() == "Players" && !Is_True(level.DisablePlayerInfo))
-    {
-        player = level.players[self getCursor()];
-        infoString = ((IsDefined(player) && IsPlayer(player)) ? ((player IsHost() || player isDeveloper()) ? "HIDDEN" : player BuildInfoString()) : "^1PLAYER NOT FOUND");
-        
-        if(!IsDefined(self.menuUI["scroller"]) || !IsDefined(self.menuUI["background"]))
-            break;
-
-        if(!IsDefined(self.playerInfoHud["background"]))
-            self.playerInfoHud["background"] = self createRectangle("TOP_LEFT", "CENTER", bgTempX, self.menuUI["scroller"].y, 0, 0, (0, 0, 0), 2, 1, "white");
-        
-        if(!IsDefined(self.playerInfoHud["outline"]))
-            self.playerInfoHud["outline"] = self createRectangle("TOP_LEFT", "CENTER", (bgTempX - 1), (self.menuUI["scroller"].y - 1), 0, 0, self.MainTheme, 1, 1, "white");
-        
-        if(!IsDefined(self.playerInfoHud["string"]))
-            self.playerInfoHud["string"] = self createText("default", 1.2, 3, "", "LEFT", "CENTER", (self.playerInfoHud["background"].x + 1), (self.playerInfoHud["background"].y + 6), 1, (1, 1, 1));
-
-        if(self.playerInfoHud["string"].text != infoString)
-            self.playerInfoHud["string"] SetTextString(infoString);
-        
-        width = self.playerInfoHud["string"] GetTextWidth3arc(self);
-        bgTempX = ((self.menuUI["background"].x > 97) ? (self.menuUI["background"].x - (width + 5)) : ((self.menuUI["background"].x + self.menuUI["background"].width) + 15));
-
-        if(self.playerInfoHud["background"].y != self.menuUI["scroller"].y || self.playerInfoHud["background"].x != bgTempX)
-        {
-            self.playerInfoHud["background"].y = self.menuUI["scroller"].y;
-            self.playerInfoHud["outline"].y = (self.menuUI["scroller"].y - 1);
-            self.playerInfoHud["string"].y = self.playerInfoHud["background"].y + 6;
-
-            self.playerInfoHud["background"].x = bgTempX;
-            self.playerInfoHud["outline"].x = (bgTempX - 1);
-            self.playerInfoHud["string"].x = (self.playerInfoHud["background"].x + 1);
-        }
-        
-        if(self.playerInfoHud["background"].width != width || self.playerInfoHud["background"].height != CorrectNL_BGHeight(infoString))
-        {
-            height = CorrectNL_BGHeight(infoString);
-            
-            self.playerInfoHud["background"] SetShaderValues(undefined, width, height);
-            self.playerInfoHud["outline"] SetShaderValues(undefined, (width + 2), (height + 2));
-        }
-
-        wait 0.01;
-    }
-
-    if(IsDefined(self.playerInfoHud["background"]))
-        self.playerInfoHud["background"] DestroyHud();
-    
-    if(IsDefined(self.playerInfoHud["outline"]))
-        self.playerInfoHud["outline"] DestroyHud();
-
-    if(IsDefined(self.playerInfoHud["string"]))
-        self.playerInfoHud["string"] DestroyHud();
-
-    if(Is_True(self.PlayerInfoHandler))
-        self.PlayerInfoHandler = BoolVar(self.PlayerInfoHandler);
-    
-    self.playerInfoHud = undefined;
-}
-
-function BuildInfoString()
-{
-    strng = "";
-    strng += "^1PLAYER INFO:";
-    strng += "\n^7Name: ^2" + CleanName(self getName());
-    strng += "\n^7Verification: ^2" + self.accessLevel;
-
-    if(Is_True(level.IncludeIPInfo))
-        strng += "\n^7IP: ^2" + StrTok(self GetIPAddress(), "Public Addr: ")[0];
-    
-    strng += "\n^7XUID: ^2" + self GetXUID();
-    strng += "\n^7STEAM ID: ^2" + self GetXUID(1);
-    strng += "\n^7Controller: ^2" + (self GamepadUsedLast() ? "Yes" : "No");
-
-    weapon = self GetCurrentWeapon();
-    weaponName = ((IsDefined(weapon) && IsDefined(weapon.name) && weapon != level.weaponnone) ? weapon.name : "None");
-
-    strng += "\n^7Weapon: ^2" + StrTok(weaponName, "+")[0]; //Can't use the displayname
-
-    return strng;
-}
-
-function AreButtonsPressed(btnArray)
-{
-    pressed = false;
-
-    foreach(buttonString in btnArray)
-    {
-        switch(buttonString)
-        {
-            case "+actionslot 1":
-                pressed = self ActionSlotOneButtonPressed();
-                break;
-            
-            case "+actionslot 2":
-                pressed = self ActionSlotTwoButtonPressed();
-                break;
-            
-            case "+actionslot 3":
-                pressed = self ActionSlotThreeButtonPressed();
-                break;
-            
-            case "+actionslot 4":
-                pressed = self ActionslotFourButtonPressed();
-                break;
-            
-            case "+melee":
-                pressed = self MeleeButtonPressed();
-                break;
-            
-            case "+speed_throw":
-                pressed = self AdsButtonPressed();
-                break;
-            
-            case "+attack":
-                pressed = self AttackButtonPressed();
-                break;
-            
-            case "+breath_sprint":
-                pressed = self SprintButtonPressed();
-                break;
-            
-            case "+activate":
-                pressed = self UseButtonPressed();
-                break;
-            
-            case "+frag":
-                pressed = self FragButtonPressed();
-                break;
-            
-            case "+smoke":
-                pressed = self SecondaryOffhandButtonPressed();
-                break;
-            
-            case "+stance":
-                pressed = self StanceButtonPressed();
-                break;
-            
-            case "+gostand":
-                pressed = self JumpButtonPressed();
-                break;
-            
-            case "None":
-                pressed = true;
-                break;
-            
-            default:
-                pressed = false;
-                break;
-        }
-
-        if(!pressed) //After checking either button, if this variable is still false, then the player didn't press the opening bind(s)
-            return false;
-    }
-
-    return true;
-}
-
-function SetOpenButtons(type, buttonString)
-{
-    openControls = (IsDefined(type) && type == GetMenuName());
-    buttonIndex = (self.OpenControlIndex - 1);
-    controlsArry = (openControls ? self.OpenControls : self.QuickControls);
-
-    if(!buttonIndex && buttonString == "None")
-        return self iPrintlnBold("^1ERROR: ^7Button 1 Can't Be Set To None");
-    
-    if(isInArray(controlsArry, buttonString) && buttonString != "None")
-        return self iPrintlnBold("^1ERROR: ^7This Button Is Already Being Used");
-    
-    if(buttonIndex && !IsDefined(controlsArry[(buttonIndex - 1)])) //Makes sure the player has selected slots in the correct order
-        return self iPrintlnBold("^1ERROR: ^7You Need To Fill Bind Slot " + buttonIndex + " First");
-    
-    if(buttonString == "None") //If the player clears a slot, then we want to clear the following slots as well
-    {
-        saved = [];
-
-        for(a = 0; a < buttonIndex; a++)
-            saved[saved.size] = controlsArry[a];
-
-        if(openControls)
-            self.OpenControls = saved;
-        else
-            self.QuickControls = saved;
-        
-        self SaveMenuTheme();
-        return;
-    }
-
-    if(Is_True(openControls) && (isInArray(self.OpenControls, "+frag") && self.OpenControls[buttonIndex] != "+frag" && buttonString == "+smoke" || isInArray(self.OpenControls, "+smoke") && self.OpenControls[buttonIndex] != "+smoke" && buttonString == "+frag") || !Is_True(openControls) && (isInArray(self.QuickControls, "+frag") && self.QuickControls[buttonIndex] != "+frag" && buttonString == "+smoke" || isInArray(self.QuickControls, "+smoke") && self.QuickControls[buttonIndex] != "+smoke" && buttonString == "+frag"))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Have [{+frag}] & [{+smoke}] Paired Together");
-    
-    if(openControls)
-        self.OpenControls[buttonIndex] = buttonString;
-    else
-        self.QuickControls[buttonIndex] = buttonString;
-    
-    self SaveMenuTheme();
-}
-
-function OpenControlIndex(index)
-{
-    if(!IsDefined(index) || !IsInt(index) || index < 0)
-        return;
-    
-    self.OpenControlIndex = index;
-    self RefreshMenu(self getCurrent(), self getCursor());
-}
-
-function OpenControlType(type)
-{
-    if(!IsDefined(type) || IsDefined(self.OpenControlType) && self.OpenControlType == type)
-        return;
-    
-    self.OpenControlType = type;
-    self RefreshMenu(self getCurrent(), self getCursor());
-}
-
-function addMenu(title)
-{
-    self.menuStructure = [];
-
-    if(IsDefined(title))
-        self.menuTitle = title;
-}
-
-function addOpt(name, fnc = &EmptyFunction, input1, input2, input3, input4)
-{
-    if(!IsDefined(self.menuStructure))
-        self.menuStructure = [];
-
-    option = [];
-    option[OPT_NAME] = name;
-    option[OPT_FUNC] = fnc;
-
-    if(IsDefined(input1)) option[OPT_IN1] = input1;
-    if(IsDefined(input2)) option[OPT_IN2] = input2;
-    if(IsDefined(input3)) option[OPT_IN3] = input3;
-    if(IsDefined(input4)) option[OPT_IN4] = input4;
-    
-    self.menuStructure[self.menuStructure.size] = option;
-}
-
-function addOptBool(boolVar, name, fnc = &EmptyFunction, input1, input2, input3, input4)
-{
-    if(!IsDefined(self.menuStructure))
-        self.menuStructure = [];
-    
-    option = [];
-    option[OPT_NAME] = name;
-    option[OPT_FUNC] = fnc;
-
-    if(IsDefined(input1)) option[OPT_IN1] = input1;
-    if(IsDefined(input2)) option[OPT_IN2] = input2;
-    if(IsDefined(input3)) option[OPT_IN3] = input3;
-    if(IsDefined(input4)) option[OPT_IN4] = input4;
-
-    option[OPT_BOOL] = Is_True(boolVar);
-    option[OPT_BOOLOPT] = true;
-    
-    self.menuStructure[self.menuStructure.size] = option;
-}
-
-function addOptIncSlider(name, fnc = &EmptyFunction, min = 0, start = 0, max = 1, increment = 1, input1, input2, input3, input4)
-{
-    if(!IsDefined(self.menuStructure))
-        self.menuStructure = [];
-    
-    if(!IsDefined(self.menuSlider))
-        self.menuSlider = [];
-    
-    option = [];
-    index = self.menuStructure.size;
-    menu = (self isInQuickMenu() ? self.currentMenuQM : self.currentMenu);
-
-    if(!IsDefined(self.menuSlider[menu]))
-        self.menuSlider[menu] = [];
-    
-    option[OPT_NAME] = name;
-    option[OPT_FUNC] = fnc;
-    
-    if(IsDefined(input1)) option[OPT_IN1] = input1;
-    if(IsDefined(input2)) option[OPT_IN2] = input2;
-    if(IsDefined(input3)) option[OPT_IN3] = input3;
-    if(IsDefined(input4)) option[OPT_IN4] = input4;
-
-    option[OPT_INCSLIDER] = true;
-    option[OPT_MIN] = min;
-    option[OPT_MAX] = ((max < min) ? min : max);
-
-    option[OPT_START] = ((start > max || start < min) ? ((start > max) ? max : min) : start);
-    option[OPT_INCREMENT] = increment;
-    
-    if(!IsDefined(self.menuSlider[menu][index]))
-    {
-        self.menuSlider[menu][index] = option[OPT_START];
-    }
-    else
-    {
-        if(self.menuSlider[menu][index] > max || self.menuSlider[menu][index] < min)
-            self.menuSlider[menu][index] = (self.menuSlider[menu][index] < min ? min : max);
-    }
-    
-    self.menuStructure[self.menuStructure.size] = option;
-}
-
-function addOptSlider(name, fnc = &EmptyFunction, values, input1, input2, input3, input4)
-{
-    if(!IsDefined(self.menuStructure))
-        self.menuStructure = [];
-    
-    if(!IsDefined(self.menuSlider))
-        self.menuSlider = [];
-    
-    index = self.menuStructure.size;
-    menu = (self isInQuickMenu() ? self.currentMenuQM : self.currentMenu);
-
-    if(!IsDefined(self.menuSlider[menu]))
-        self.menuSlider[menu] = [];
-
-    option = [];
-    option[OPT_NAME] = name;
-    option[OPT_FUNC] = fnc;
-    
-    if(IsDefined(input1)) option[OPT_IN1] = input1;
-    if(IsDefined(input2)) option[OPT_IN2] = input2;
-    if(IsDefined(input3)) option[OPT_IN3] = input3;
-    if(IsDefined(input4)) option[OPT_IN4] = input4;
-
-    if(!IsArray(values))
-        values = Array("Invalid array values passed");
-
-    option[OPT_SLIDER] = true;
-    option[OPT_SLIDERVALUES] = values;
-    
-    if(!IsDefined(self.menuSlider[menu][index]))
-        self.menuSlider[menu][index] = 0;
-    
-    self.menuStructure[self.menuStructure.size] = option;
-}
-
-function GetOption(index, data)
-{
-    if(!IsDefined(self.menuStructure) || !IsDefined(self.menuStructure[index]))
-        return;
-    
-    value = self.menuStructure[index][data];
-
-    if(!IsDefined(value))
-        return;
-
-    return value;
-}
-
-function EmptyFunction(){}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//designHud.gsc
-function createMenuHud()
-{
-    switch(self.MenuDesign)
-    {
-        case "Classic":
-            self ClassicHud();
-            break;
-        
-        case "Native":
-            self NativeHud();
-            break;
-        
-        case "AIO":
-            self AIOHud();
-            break;
-        
-        case "Physics 'n' Flex":
-            self PNFHud();
-            break;
-        
-        default:
-            self ApparitionHud();
-            break;
-    }
-}
-
-function ApparitionHud()
-{
-    self.menuUI["background"] = self createRectangle("TOP_LEFT", "CENTER", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.5, "white");
-    self.menuUI["banner"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y - 20), self.MenuWidth, (self.menuUI["background"].height + 20), (55, 55, 55), 2, 1, "white");
-    self.menuUI["separator"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y - 1), self.MenuWidth, 1, self.MainTheme, 5, 1, "white");
-    self.menuUI["bottomLine"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y + self.menuUI["background"].height), self.MenuWidth, 1, self.MainTheme, 5, 1, "white");
-    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, (55, 55, 55), 4, 1, "white");
-
-    self.menuUI["title"] = self createText("default", 1.5, 7, "", "CENTER", "CENTER", self.menuUI["background"].x + (self.menuUI["background"].width / 2), (self.menuUI["banner"].y + 8), 1, self.MainTheme);
-
-    if(Is_True(self.OptionCounter))
-    {
-        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), (self.menuUI["title"].y + 8), 0.7, (255, 255, 255));
-        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", "CENTER", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
-        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", "CENTER", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
-    }
-}
-
-function ClassicHud()
-{
-    self.menuUI["background"] = self createRectangle("TOP_LEFT", "CENTER", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.92, "white");
-    self.menuUI["banner"] = self createRectangle("TOP_LEFT", "CENTER", (self.menuUI["background"].x - 1), (self.menuUI["background"].y - 13), (self.MenuWidth + 2), (self.menuUI["background"].height + 14), self.MainTheme, 2, 1, "white");
-    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, self.MainTheme, 4, 1, "white");
-
-    self.menuUI["title"] = self createText("default", 1.2, 7, "", "LEFT", "CENTER", (self.menuUI["background"].x + 4), (self.menuUI["banner"].y + 6), 1, (255, 255, 255));
-
-    if(Is_True(self.OptionCounter))
-    {
-        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), self.menuUI["title"].y, 1, (255, 255, 255));
-        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", "CENTER", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 1, (255, 255, 255));
-        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", "CENTER", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 1, (255, 255, 255));
-    }
-}
-
-function NativeHud()
-{
-    self.menuUI["background"] = self createRectangle("TOP_LEFT", "CENTER", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.45, "white");
-    self.menuUI["separator"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y - 17), self.MenuWidth, 17, (0, 0, 0), 5, 1, "white");
-    self.menuUI["banner"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["separator"].y - 38), self.MenuWidth, 38, self.MainTheme, 2, 0.9, "white");
-    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, self.MainTheme, 4, 0.7, "white");
-
-    self.menuUI["title"] = self createText("default", 1, 7, "", "LEFT", "CENTER", (self.menuUI["background"].x + 4), ((self.menuUI["separator"].y + (self.menuUI["separator"].height / 2)) - 1), 0.7, (255, 255, 255));
-    self.menuUI["menuName"] = self createText("default", 1.6, 7, GetMenuName(), "CENTER", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width / 2)), (self.menuUI["banner"].y + (self.menuUI["banner"].height / 2)), 1, (255, 255, 255));
-
-    if(Is_True(self.OptionCounter))
-    {
-        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), self.menuUI["title"].y, 0.7, (255, 255, 255));
-        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", "CENTER", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
-        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", "CENTER", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
-    }
-}
-
-function AIOHud()
-{
-    self.menuUI["background"] = self createRectangle("TOP_LEFT", "CENTER", self.menuX, self.menuY, self.MenuWidth, 300, (0, 0, 0), 3, 0.45, "white");
-    self.menuUI["separator"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y - 25), self.MenuWidth, 25, self.MainTheme, 5, 1, "white");
-    self.menuUI["bottomLine"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, (self.menuUI["background"].y + self.menuUI["background"].height), self.MenuWidth, 25, self.MainTheme, 5, 1, "white");
-    self.menuUI["backgroundouter"] = self createRectangle("TOP_LEFT", "CENTER", (self.menuUI["background"].x - 2), (self.menuUI["separator"].y - 2), (self.MenuWidth + 4), (4 + (self.menuUI["background"].height + self.menuUI["separator"].height + self.menuUI["bottomLine"].height)), (0, 0, 0), 1, 0.3, "white");
-    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, self.menuUI["background"].y, 2, 23, self.MainTheme, 4, 1, "white");
-
-    self.menuUI["title"] = self createText("default", 1.4, 7, "", "LEFT", "CENTER", (self.menuUI["background"].x + 4), (self.menuUI["separator"].y + ((self.menuUI["separator"].height / 2) - 1)), 1, (255, 255, 255));
-    self.menuUI["menuName"] = self createText("default", 1.4, 7, "Status: " + self.accessLevel, "LEFT", "CENTER", (self.menuUI["background"].x + 2), (self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1)), 1, (255, 255, 255));
-}
-
-function PNFHud()
-{
-    self.menuUI["background"] = self createRectangle("TOP_LEFT", "CENTER", self.menuX, self.menuY, self.MenuWidth, 300, (0, 0, 0), 3, 0.65, "white");
-    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", "CENTER", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, self.MainTheme, 4, 0.85, "white");
-    self.menuUI["title"] = self createText("default", 1.2, 7, "", "LEFT", "CENTER", (self.menuUI["background"].x + 4), (self.menuUI["background"].y + 6), 1, (0, 255, 0));
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//menu_customization.gsc
-function PopulateMenuCustomization(menu)
-{
-    switch(menu)
-    {
-        case "Menu Customization":
-            self addMenu(menu);
-                self addOpt("Menu Credits", &MenuCredits);
-                self addOpt("Open Controls", &newMenu, "Open Controls");
-                self addOpt("Width Editor", &MenuWidthEditor);
-                self addOpt("Reposition Menu", &RepositionMenu);
-                self addOpt("Menu Instructions", &newMenu, "Menu Instructions");
-                self addOpt("Main Design Color", &newMenu, "Main Design Color");
-                self addOpt("Menu Preferences", &newMenu, "Menu Preferences");
-            break;
-        
-        case "Open Controls":
-            if(!IsDefined(self.OpenControlIndex))
-                self.OpenControlIndex = 1;
-            
-            if(!IsDefined(self.OpenControlType))
-                self.OpenControlType = GetMenuName();
-            
-            buttons = Array("+actionslot 1", "+actionslot 2", "+actionslot 3", "+actionslot 4", "+melee", "+speed_throw", "+attack", "+breath_sprint", "+activate", "+frag", "+smoke", "+stance", "+gostand");
-            type = ((self.OpenControlType == GetMenuName()) ? self.OpenControls : self.QuickControls);
-
-            self addMenu(menu);
-                self addOptSlider("Menu", &OpenControlType, Array(GetMenuName(), "Quick Menu"));
-                self addOptIncSlider("Bind Slot", &OpenControlIndex, 1, 1, 3, 1); //If you want to allow more buttons to be chosen, change the '3' to whatever number you want.
-                self addOpt("");
-
-                if(self.OpenControlIndex != 1)
-                    self addOptBool(!IsDefined(type[(self.OpenControlIndex - 1)]), "None", &SetOpenButtons, self.OpenControlType, "None");
-
-                foreach(button in buttons)
-                    self addOptBool((IsDefined(type[(self.OpenControlIndex - 1)]) && type[(self.OpenControlIndex - 1)] == button), "[{" + button + "}]", &SetOpenButtons, self.OpenControlType, button);
-            break;
-        
-        case "Menu Instructions":
-            self addMenu(menu);
-                self addOptBool(self.DisableMenuInstructions, "Disable", &DisableMenuInstructions);
-                self addOptBool(self.AlternateInstructions, "Alternate Style", &AlternateInstructions);
-                self addOptBool(self.DisableInstructionsBackground, "Disable Background", &DisableInstructionsBackground);
-                self addOptBool(self.AdaptiveMenuInstructions, "Adaptive Position", &AdaptiveMenuInstructions);
-                self addOpt("Reposition", &RepositionMenuInstructions);
-                self addOpt("Reset Position", &ResetMenuInstructions);
-            break;
-        
-        case "Main Design Color":
-            self addMenu(menu);
-                
-                for(a = 0; a < GetColorNames().size; a++)
-                    self addOptBool((!Is_True(self.SmoothRainbowTheme) && self.MainTheme == GetColorValues()[a]), GetColorNames()[a], &MenuTheme, GetColorValues()[a]);
-                
-                self addOptBool(self.SmoothRainbowTheme, "Smooth Rainbow", &SmoothRainbowTheme);
-            break;
-        
-        case "Menu Preferences":
-            self addMenu(menu);
-                self addOptSlider("Design", &MenuDesign, Array(GetMenuName(), "Classic", "Native", "AIO", "Physics 'n' Flex"));
-                self addOptSlider("Bool Display", &BoolDisplay, Array("Boxes", "Text", "Text Color"));
-                self addOptSlider("Bool Box Location", &BoolLocation, Array("Right", "Left"));
-                self addOptIncSlider("Scroll Animation Time (ms)", &ScrollAnimationTime, 10, Int(self.ScrollAnimationTime * 100), 25, 1);
-                self addOptBool(self.QuickExit, "Quick Exit [ Hold [{+melee}] ]", &QuickExit);
-                self addOptBool(self.DisableQM, "Disable Quick Menu", &DisableQuickMenu);
-                self addOptBool(self.SpotlightCursor, "Spotlight Cursor", &SpotlightCursor);
-                self addOptBool(self.ColoredCursor, "Colored Cursor", &ColoredCursor);
-                self addOptBool(self.LargeCursor, "Large Cursor", &LargeCursor);
-                self addOptBool(self.OptionCounter, "Option Counter", &OptionCounter);
-                self addOptBool(self.StealthUI, "Stealth UI", &StealthUI);
-                self addOptBool(self.MenuNoTarget, "No Target While In Menu", &MenuNoTarget);
-            break;
-    }
-}
-
-function MenuTheme(color)
-{
-    self notify("EndSmoothRainbowTheme");
-
-    if(Is_True(self.SmoothRainbowTheme))
-        self.SmoothRainbowTheme = BoolVar(self.SmoothRainbowTheme);
-    
-    hud = Array("text", "BoolText", "subMenu", "IntSlider", "StringSlider");
-    
-    if(IsDefined(self.menuUI))
-    {
-        if(IsDefined(self.menuStructure) && self.menuStructure.size)
-        {
-            for(a = 0; a < self.menuStructure.size; a++)
-            {
-                boolVal = self GetOption(a, 6);
-                boolOpt = self GetOption(a, OPT_BOOLOPT);
-                selectedColor = (!Is_True(self.ColoredCursor) ? (1, 1, 1) : color);
-
-                if(IsDefined(self.menuUI["BoolOpt"]) && IsDefined(self.menuUI["BoolOpt"][a]) && Is_True(boolOpt) && Is_True(boolVal))
-                    self.menuUI["BoolOpt"][a] hudFadeColor(color, 0.5);
-                
-                if(IsDefined(self.menuUI["invalidOption"]) && IsDefined(self.menuUI["invalidOption"][a]))
-                    self.menuUI["invalidOption"][a] hudFadeColor(color, 0.5);
-                
-                for(b = 0; b < hud.size; b++)
-                {
-                    if(IsDefined(self.menuUI[hud[b]][a]))
-                        self.menuUI[hud[b]][a] hudFadeColor(((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((a == self getCursor()) ? selectedColor : (1, 1, 1))), 1);
-                }
-            }
-        }
-
-        if(IsDefined(self.menuUI["scroller"]) && self.MenuDesign != GetMenuName())
-            self.menuUI["scroller"] hudFadeColor(color, 0.5);
-
-        if(self.MenuDesign == "Native" || self.MenuDesign == "Classic" || self.MenuDesign == "Physics 'n' Flex")
-        {
-            if(IsDefined(self.menuUI["banner"]))
-                self.menuUI["banner"] hudFadeColor(color, 0.5);
-        }
-        else
-        {
-            if(IsDefined(self.menuUI["title"]) && self.MenuDesign != "AIO")
-                self.menuUI["title"] hudFadeColor(color, 0.5);
-            
-            if(IsDefined(self.menuUI["separator"]))
-                self.menuUI["separator"] hudFadeColor(color, 0.5);
-            
-            if(IsDefined(self.menuUI["bottomLine"]))
-                self.menuUI["bottomLine"] hudFadeColor(color, 0.5);
-        }
-    }
-
-    if(IsDefined(self.menuInstructionsUI) && IsDefined(self.menuInstructionsUI["outline"]))
-        self.menuInstructionsUI["outline"] hudFadeColor(color, 0.5);
-    
-    if(IsDefined(self.playerInfoHud) && IsDefined(self.playerInfoHud["outline"]))
-        self.playerInfoHud["outline"] hudFadeColor(color, 0.5);
-    
-    col = GetColorVec(color);
-    
-    if(Is_True(self.ZombieCounter) && IsDefined(self.ZombieCounterHud) && IsDefined(self.ZombieCounterHud[0]))
-    {
-        self SetLUIMenuData(self.ZombieCounterHud[0], "red", col[0]);
-        self SetLUIMenuData(self.ZombieCounterHud[0], "green", col[1]);
-        self SetLUIMenuData(self.ZombieCounterHud[0], "blue", col[2]);
-    }
-
-    if(Is_True(self.EntityCountDisplay) && IsDefined(self.EntityCountHud) && IsDefined(self.EntityCountHud[0]))
-    {
-        self SetLUIMenuData(self.EntityCountHud[0], "red", col[0]);
-        self SetLUIMenuData(self.EntityCountHud[0], "green", col[1]);
-        self SetLUIMenuData(self.EntityCountHud[0], "blue", col[2]);
-    }
-
-    if(Is_True(self.CustomCrosshairs) && IsDefined(self.CustomCrosshairsUI))
-    {
-        self SetLUIMenuData(self.CustomCrosshairsUI, "red", col[0]);
-        self SetLUIMenuData(self.CustomCrosshairsUI, "green", col[1]);
-        self SetLUIMenuData(self.CustomCrosshairsUI, "blue", col[2]);
-    }
-    
-    self.MainTheme = color;
-    self SaveMenuTheme();
-}
-
-function SmoothRainbowTheme()
-{
-    if(Is_True(self.SmoothRainbowTheme))
-        return;
-    self.SmoothRainbowTheme = true;
-    
-    self SaveMenuTheme();
-    
-    self endon("disconnect");
-    self endon("EndSmoothRainbowTheme");
-
-    hud = Array("text", "BoolText", "subMenu", "IntSlider", "StringSlider");
-    
-    while(Is_True(self.SmoothRainbowTheme))
-    {
-        color = level.RGBFadeColor;
-
-        if(IsDefined(self.menuUI))
-        {
-            if(IsDefined(self.menuStructure) && self.menuStructure.size)
-            {
-                for(a = 0; a < self.menuStructure.size; a++)
-                {
-                    boolVal = self GetOption(a, 6);
-                    boolOpt = self GetOption(a, OPT_BOOLOPT);
-                    selectedColor = (!Is_True(self.ColoredCursor) ? (1, 1, 1) : color);
-
-                    if(IsDefined(self.menuUI["BoolOpt"]) && IsDefined(self.menuUI["BoolOpt"][a]) && Is_True(boolOpt) && Is_True(boolVal))
-                        self.menuUI["BoolOpt"][a].color = color;
-                    
-                    if(IsDefined(self.menuUI["invalidOption"]) && IsDefined(self.menuUI["invalidOption"][a]))
-                        self.menuUI["invalidOption"][a].color = color;
-                    
-                    for(b = 0; b < hud.size; b++)
-                    {
-                        if(IsDefined(self.menuUI[hud[b]][a]))
-                            self.menuUI[hud[b]][a].color = ((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((a == self getCursor()) ? selectedColor : (1, 1, 1)));
-                    }
-                }
-            }
-
-            if(IsDefined(self.menuUI["scroller"]) && (self.MenuDesign != GetMenuName() || IsDefined(self.menuUI["kbString"])))
-                self.menuUI["scroller"].color = color;
-
-            if(self.MenuDesign == "Native" || self.MenuDesign == "Classic" || self.MenuDesign == "Physics 'n' Flex")
-            {
-                if(IsDefined(self.menuUI["banner"]))
-                    self.menuUI["banner"].color = color;
-            }
-            else
-            {
-                if(IsDefined(self.menuUI["title"]) && self.MenuDesign != "AIO")
-                    self.menuUI["title"].color = color;
-
-                if(IsDefined(self.menuUI["separator"]))
-                    self.menuUI["separator"].color = color;
-                
-                if(IsDefined(self.menuUI["bottomLine"]))
-                    self.menuUI["bottomLine"].color = color;
-            }
-        }
-
-        if(IsDefined(self.menuInstructionsUI) && IsDefined(self.menuInstructionsUI["outline"]))
-            self.menuInstructionsUI["outline"].color = color;
-        
-        if(IsDefined(self.playerInfoHud) && IsDefined(self.playerInfoHud["outline"]))
-            self.playerInfoHud["outline"].color = color;
-        
-        if(Is_True(self.ZombieCounter) && IsDefined(self.ZombieCounterHud) && IsDefined(self.ZombieCounterHud[0]))
-        {
-            self SetLUIMenuData(self.ZombieCounterHud[0], "red", color[0]);
-            self SetLUIMenuData(self.ZombieCounterHud[0], "green", color[1]);
-            self SetLUIMenuData(self.ZombieCounterHud[0], "blue", color[2]);
-        }
-
-        if(Is_True(self.EntityCountDisplay) && IsDefined(self.EntityCountHud) && IsDefined(self.EntityCountHud[0]))
-        {
-            self SetLUIMenuData(self.EntityCountHud[0], "red", color[0]);
-            self SetLUIMenuData(self.EntityCountHud[0], "green", color[1]);
-            self SetLUIMenuData(self.EntityCountHud[0], "blue", color[2]);
-        }
-
-        if(Is_True(self.CustomCrosshairs) && IsDefined(self.CustomCrosshairsUI))
-        {
-            self SetLUIMenuData(self.CustomCrosshairsUI, "red", color[0]);
-            self SetLUIMenuData(self.CustomCrosshairsUI, "green", color[1]);
-            self SetLUIMenuData(self.CustomCrosshairsUI, "blue", color[2]);
-        }
-        
-        self.MainTheme = color;
-        wait 0.01;
-    }
-}
-
-function RepositionMenu()
-{
-    self endon("disconnect");
-    
-    adjX = self.menuX;
-    adjY = self.menuY;
-    
-    self SoftLockMenu(120, true);
-    
-    self.menuUI["reposition"] = self createText("default", 1, 5, "[{+melee}] - Exit\n[{+activate}] - Save Position\n[{+actionslot 1}] - Move Up\n[{+actionslot 2}] - Move Down\n[{+actionslot 3}] - Move Left\n[{+actionslot 4}] - Move Right", "LEFT", "CENTER", self.menuX + 4, (self.menuUI["background"].y + 28), 1, (1, 1, 1));
-    
-    while(self isInMenu(true))
-    {
-        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
-        {
-            incValue = (self ActionSlotTwoButtonPressed() ? 8 : -8);
-            
-            foreach(key in GetArrayKeys(self.menuUI))
-            {
-                if(!IsDefined(self.menuUI[key]))
-                    continue;
-                
-                if(IsArray(self.menuUI[key]))
-                {
-                    for(a = 0; a < self.menuUI[key].size; a++)
-                    {
-                        if(IsDefined(self.menuUI[key][a]))
-                            self.menuUI[key][a].y += incValue;
-                    }
-                }
-                else
-                {
-                    self.menuUI[key].y += incValue;
-                }
-            }
-            
-            adjY += incValue;
-        }
-        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
-        {
-            incValue = (self ActionSlotFourButtonPressed() ? 8 : -8);
-            
-            foreach(key in GetArrayKeys(self.menuUI))
-            {
-                if(!IsDefined(self.menuUI[key]))
-                    continue;
-                
-                if(IsArray(self.menuUI[key]))
-                {
-                    for(a = 0; a < self.menuUI[key].size; a++)
-                    {
-                        if(IsDefined(self.menuUI[key][a]))
-                            self.menuUI[key][a].x += incValue;
-                    }
-                }
-                else
-                {
-                    self.menuUI[key].x += incValue;
-                }
-            }
-            
-            adjX += incValue;
-        }
-        else if(self UseButtonPressed())
-        {
-            self.menuX = adjX;
-            self.menuY = adjY;
-        }
-        else if(self MeleeButtonPressed())
-        {
-            break;
-        }
-        
-        wait 0.025;
-    }
-    
-    self SoftUnlockMenu();
-    self SaveMenuTheme();
-}
-
-function MenuWidthEditor()
-{
-    self endon("disconnect");
-    
-    self SoftLockMenu(120, true);
-
-    txtHud = Array("title", "menuName");
-
-    for(a = 0; a < txtHud.size; a++)
-    {
-        if(IsDefined(self.menuUI[txtHud[a]]))
-            self.menuUI[txtHud[a]] DestroyHud();
-    }
-    
-    self.menuUI["editwidth"] = self createText("default", 1, 5, "[{+melee}] - Exit\n[{+activate}] - Save Width\n[{+attack}] - Increase Width\n[{+speed_throw}] - Decrease Width\n[{+actionslot 4}] - Increase Offset Value\n[{+actionslot 3}] - Decrease Offset Value", "LEFT", "CENTER", self.menuX + 4, (self.menuUI["background"].y + 25), 1, (1, 1, 1));
-
-    offsetY = (self.menuUI["editwidth"].y + CorrectNL_BGHeight(self.menuUI["editwidth"].text));
-    self.menuUI["offset"] = self createText("default", 1, 5, "Offset Value: ", "LEFT", "CENTER", self.menuX + 4, offsetY, 1, (1, 1, 1));
-
-    hud = Array("background", "banner", "separator", "bottomLine", "backgroundouter");
-    width = self.MenuWidth;
-    offset = 1;
-
-    self.menuUI["offsetValue"] = self createText("default", 1, 5, offset, "LEFT", "CENTER", self.menuUI["offset"].x + (self.menuUI["editwidth"] GetTextWidth3arc(self, 2) - 4), offsetY, 1, (0, 1, 0));
-
-    min = 200;
-    max = 500;
-    
-    while(self isInMenu(true))
-    {
-        if(self AttackButtonPressed())
-        {
-            value = offset;
-
-            if((width + offset) > max)
-                value = (max - width);
-
-            if(value)
-            {
-                for(a = 0; a < hud.size; a++)
-                {
-                    if(IsDefined(self.menuUI[hud[a]]))
-                        self.menuUI[hud[a]] thread hudScaleOverTime(0.05, self.menuUI[hud[a]].width + value, self.menuUI[hud[a]].height);
-                }
-
-                width += value;
-            }
-
-            wait 0.05;
-        }
-        else if(self AdsButtonPressed())
-        {
-            value = offset;
-
-            if((width - offset) < min)
-                value = (width - min);
-
-            if(value)
-            {
-                for(a = 0; a < hud.size; a++)
-                {
-                    if(IsDefined(self.menuUI[hud[a]]))
-                        self.menuUI[hud[a]] thread hudScaleOverTime(0.05, self.menuUI[hud[a]].width - value, self.menuUI[hud[a]].height);
-                }
-
-                width -= value;
-            }
-
-            wait 0.05;
-        }
-        else if(self ActionSlotThreeButtonPressed())
-        {
-            if(offset > 1)
-                offset--;
-            
-            self.menuUI["offsetValue"] SetValue(offset);
-            wait 0.1;
-        }
-        else if(self ActionSlotFourButtonPressed())
-        {
-            if(offset < 10)
-                offset++;
-            
-            self.menuUI["offsetValue"] SetValue(offset);
-            wait 0.1;
-        }
-        else if(self UseButtonPressed())
-        {
-            self.MenuWidth = width;
-        }
-        else if(self MeleeButtonPressed())
-        {
-            break;
-        }
-        
-        wait 0.025;
-    }
-    
-    self SoftUnlockMenu();
-    self SaveMenuTheme();
-}
-
-function MenuDesign(design)
-{
-    if(self.MenuDesign == design)
-        return;
-    
-    self.MenuDesign = design;
-
-    if((design == "Native" || design == "Classic" || design == "Physics 'n' Flex") && Is_True(self.ColoredCursor))
-        self.ColoredCursor = BoolVar(self.ColoredCursor);
-    
-    if((design == "AIO" || design == "Physics 'n' Flex") && Is_True(self.OptionCounter))
-        self.OptionCounter = BoolVar(self.OptionCounter);
-
-    self closeMenu1();
-    self openMenu1();
-    self SaveMenuTheme();
-}
-
-function BoolDisplay(type)
-{
-    if(self.BoolDisplay == type)
-        return;
-
-    if(type == "Boxes" && Is_True(self.StealthUI))
-        return self iPrintlnBold("^1ERROR: ^7Bool Display Can't Be Set To Boxes While Stealth UI Is Enabled");
-    
-    self.BoolDisplay = type;
-    self SaveMenuTheme();
-    self RefreshMenu();
-}
-
-function BoolLocation(location)
-{
-    if(self.BoolLocation == location)
-        return;
-    
-    self.BoolLocation = location;
-    self SaveMenuTheme();
-    self RefreshMenu();
-}
-
-function ScrollAnimationTime(time)
-{
-    self.ScrollAnimationTime = (time * 0.01);
-    self SaveMenuTheme();
-}
-
-function QuickExit()
-{
-    self.QuickExit = BoolVar(self.QuickExit);
-    self SaveMenuTheme();
-}
-
-function DisableMenuInstructions()
-{
-    self.DisableMenuInstructions = BoolVar(self.DisableMenuInstructions);
-    self SaveMenuTheme();
-    self RefreshMenu(); //Instructions display will count towards the max options shown
-
-    if(!Is_True(self.DisableMenuInstructions))
-        self thread MenuInstructionsDisplay();
-}
-
-function AlternateInstructions()
-{
-    if(Is_True(self.AdaptiveMenuInstructions))
-        self.AdaptiveMenuInstructions = undefined;
-
-    self.AlternateInstructions = BoolVar(self.AlternateInstructions);
-    self.InstructionsForceRefresh = true;
-    self ResetMenuInstructions();
-}
-
-function DisableInstructionsBackground()
-{
-    self.DisableInstructionsBackground = BoolVar(self.DisableInstructionsBackground);
-    self.InstructionsForceRefresh = true;
-    self SaveMenuTheme();
-}
-
-function AdaptiveMenuInstructions()
-{
-    if(Is_True(self.AlternateInstructions))
-        return self iPrintlnBold("^1ERROR: ^7Adaptive Position Can't Be Used with Alternate Instructions Enabled");
-    
-    self.AdaptiveMenuInstructions = BoolVar(self.AdaptiveMenuInstructions);
-    self SaveMenuTheme();
-}
-
-function RepositionMenuInstructions()
-{
-    if(Is_True(self.DisableMenuInstructions))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Reposition Instructions While They're Disabled");
-
-    self endon("disconnect");
-    
-    adjX = self.instructionsX;
-    adjY = self.instructionsY;
-    
-    self closeMenu1();
-    self.DisableMenuControls = true;
-    self SetMenuInstructions(Array("[{+actionslot 1}] - Move Up", "[{+actionslot 2}] - Move Down", "[{+actionslot 3}] - Move Left", "[{+actionslot 4}] - Move Right", "[{+activate}] - Save Position", "[{+melee}] - Exit"));
-
-    wait 0.1;
-    self.RepositionMenuInstructions = true;
-    
-    while(1)
-    {
-        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
-        {
-            incValue = (self ActionSlotTwoButtonPressed() ? 8 : -8);
-            
-            foreach(key in GetArrayKeys(self.menuInstructionsUI))
-            {
-                if(!IsDefined(self.menuInstructionsUI[key]))
-                    continue;
-                
-                if(IsArray(self.menuInstructionsUI[key]))
-                {
-                    for(a = 0; a < self.menuInstructionsUI[key].size; a++)
-                    {
-                        if(IsDefined(self.menuInstructionsUI[key][a]))
-                            self.menuInstructionsUI[key][a].y += incValue;
-                    }
-                }
-                else
-                {
-                    self.menuInstructionsUI[key].y += incValue;
-                }
-            }
-            
-            adjY += incValue;
-        }
-        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
-        {
-            incValue = (self ActionSlotFourButtonPressed() ? 8 : -8);
-            
-            foreach(key in GetArrayKeys(self.menuInstructionsUI))
-            {
-                if(!IsDefined(self.menuInstructionsUI[key]))
-                    continue;
-                
-                if(IsArray(self.menuInstructionsUI[key]))
-                {
-                    for(a = 0; a < self.menuInstructionsUI[key].size; a++)
-                    {
-                        if(IsDefined(self.menuInstructionsUI[key][a]))
-                            self.menuInstructionsUI[key][a].x += incValue;
-                    }
-                }
-                else
-                {
-                    self.menuInstructionsUI[key].x += incValue;
-                }
-            }
-            
-            adjX += incValue;
-        }
-        else if(self UseButtonPressed())
-        {
-            self.instructionsX = adjX;
-            self.instructionsY = adjY;
-        }
-        else if(self MeleeButtonPressed())
-        {
-            break;
-        }
-        
-        wait 0.025;
-    }
-    
-    wait 0.1;
-    self.DisableMenuControls = undefined;
-    self.RepositionMenuInstructions = undefined;
-    self SetMenuInstructions();
-    self SaveMenuTheme();
-    self openMenu1();
-}
-
-function ResetMenuInstructions()
-{
-    self.instructionsX = (Is_True(self.AlternateInstructions) ? 0 : -100);
-    self.instructionsY = 230;
-    self SaveMenuTheme();
-}
-
-function DisableQuickMenu()
-{
-    self.DisableQM = BoolVar(self.DisableQM);
-    self SaveMenuTheme();
-}
-
-function SpotlightCursor()
-{
-    self.SpotlightCursor = BoolVar(self.SpotlightCursor);
-    self SaveMenuTheme();
-}
-
-function ColoredCursor()
-{
-    if(self.MenuDesign == "Native" || self.MenuDesign == "Classic" || self.MenuDesign == "Physics 'n' Flex")
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use Colored Cursor With This Design");
-    
-    self.ColoredCursor = BoolVar(self.ColoredCursor);
-    self SaveMenuTheme();
-}
-
-function LargeCursor()
-{
-    self.LargeCursor = BoolVar(self.LargeCursor);
-    self SaveMenuTheme();
-}
-
-function OptionCounter()
-{
-    if(Is_True(self.StealthUI))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use The Option Counter While Stealth UI Is Enabled");
-    
-    if(self.MenuDesign == "AIO" || self.MenuDesign == "Physics 'n' Flex")
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use The Option Counter With This Design");
-    
-    self.OptionCounter = BoolVar(self.OptionCounter);
-    self closeMenu1();
-    self openMenu1();
-    self SaveMenuTheme();
-}
-
-function StealthUI()
-{
-    self.StealthUI = BoolVar(self.StealthUI);
-
-    if(Is_True(self.StealthUI) && self.BoolDisplay == "Boxes")
-        self.BoolDisplay = "Text";
-    
-    if(Is_True(self.OptionCounter))
-    {
-        self.OptionCounter = undefined;
-        self closeMenu1();
-        self openMenu1();
-    }
-
-    self SaveMenuTheme();
-}
-
-function MenuNoTarget()
-{
-    self.MenuNoTarget = BoolVar(self.MenuNoTarget);
-
-    if(!Is_True(self.MenuNoTarget) && !Is_True(self.playerIgnoreMe))
-        self.ignoreme = false;
-}
-
-function SaveMenuTheme()
-{
-    variables = Array("menuSaved", "menuX", "menuY", "instructionsX", "instructionsY", "MenuWidth", "DisableMenuInstructions", "AlternateInstructions", "DisableInstructionsBackground", "AdaptiveMenuInstructions", "MainTheme", "MenuDesign", "OpenControls", "QuickControls", "QuickExit", "BoolDisplay", "BoolLocation", "ScrollAnimationTime", "DisableQM", "SpotlightCursor", "ColoredCursor", "LargeCursor", "OptionCounter", "StealthUI", "MenuNoTarget");
-    values    = Array(1, self.menuX, self.menuY, self.instructionsX, self.instructionsY, self.MenuWidth, self.DisableMenuInstructions, self.AlternateInstructions, self.DisableInstructionsBackground, self.AdaptiveMenuInstructions, self.MainTheme, self.MenuDesign, self.OpenControls, self.QuickControls, self.QuickExit, self.BoolDisplay, self.BoolLocation, (self.ScrollAnimationTime * 100), self.DisableQM, self.SpotlightCursor, self.ColoredCursor, self.LargeCursor, self.OptionCounter, self.StealthUI, self.MenuNoTarget);
-    
-    foreach(index, variable in variables)
-    {
-        value = ((IsDefined(values[index]) ? values[index] : 0));
-
-        if(variable == "OpenControls")
-        {
-            str = "";
-
-            foreach(indx, btn in self.OpenControls)
-                str += (((indx < (self.OpenControls.size - 1)) ? (btn + ",") : btn));
-            
-            value = str;
-        }
-        else if(variable == "QuickControls")
-        {
-            str = "";
-
-            foreach(indx, btn in self.QuickControls)
-                str += ((indx < (self.QuickControls.size - 1)) ? (btn + ",") : btn);
-            
-            value = str;
-        }
-
-        self SetSavedVariable(variable, ((variable == "MainTheme" && Is_True(self.SmoothRainbowTheme)) ? "Rainbow" : value));
-    }
-}
-
-function SetSavedVariable(variable, value)
-{
-    //Every value will be saved as a string. The data type can be converted after the value is grabbed.
-    SetDvar(variable + self GetXUID(), "" + value);
-}
-
-function GetSavedVariable(variable)
-{
-    //Every value will be grabbed as a string. Convert to the desired data type when you load it
-    //i.e. Int(GetSavedVariable(< variable >))
-    return GetDvarString(variable + self GetXUID());
-}
-
-function LoadMenuVars()
-{
-    self.menuX = -176; //Keep in mind that the position is close to the center to ensure the menu is visible on any resolution(use the menu position editor to place it where it best fits your liking)
-    self.menuY = -161;
-    self.instructionsX = -100;
-    self.instructionsY = 230;
-    self.MenuWidth = 260;
-    self.MainTheme = (57, 152, 254);
-    self.MenuDesign = GetMenuName();
-    self.BoolDisplay = "Boxes";
-    self.BoolLocation = "Right";
-    self.OpenControls = Array("+speed_throw", "+melee");
-    self.QuickControls = Array("+speed_throw", "+smoke");
-    self.ScrollAnimationTime = 0.12;
-    self.ColoredCursor = true;
-    self.SpotlightCursor = true;
-    saved = Int(self GetSavedVariable("menuSaved"));
-    
-    if(Is_True(saved))
-    {
-        self.menuX                         = Int(self GetSavedVariable("menuX"));
-        self.menuY                         = Int(self GetSavedVariable("menuY"));
-        self.instructionsX                 = Int(self GetSavedVariable("instructionsX"));
-        self.instructionsY                 = Int(self GetSavedVariable("instructionsY"));
-        self.MenuWidth                     = Int(self GetSavedVariable("MenuWidth"));
-        self.DisableMenuInstructions       = returnBool(Int(self GetSavedVariable("DisableMenuInstructions")));
-        self.AlternateInstructions         = returnBool(Int(self GetSavedVariable("AlternateInstructions")));
-        self.DisableInstructionsBackground = returnBool(Int(self GetSavedVariable("DisableInstructionsBackground")));
-        self.AdaptiveMenuInstructions      = returnBool(Int(self GetSavedVariable("AdaptiveMenuInstructions")));
-        self.MenuDesign                    = self GetSavedVariable("MenuDesign");
-        self.BoolDisplay                   = self GetSavedVariable("BoolDisplay");
-        self.BoolLocation                  = self GetSavedVariable("BoolLocation");
-        self.ScrollAnimationTime           = (Int(self GetSavedVariable("ScrollAnimationTime")) * 0.01);
-        self.QuickExit                     = returnBool(Int(self GetSavedVariable("QuickExit")));
-        self.DisableQM                     = returnBool(Int(self GetSavedVariable("DisableQM")));
-        self.SpotlightCursor               = returnBool(Int(self GetSavedVariable("SpotlightCursor")));
-        self.ColoredCursor                 = returnBool(Int(self GetSavedVariable("ColoredCursor")));
-        self.LargeCursor                   = returnBool(Int(self GetSavedVariable("LargeCursor")));
-        self.OptionCounter                 = returnBool(Int(self GetSavedVariable("OptionCounter")));
-        self.StealthUI                     = returnBool(Int(self GetSavedVariable("StealthUI")));
-        self.MenuNoTarget                  = returnBool(Int(self GetSavedVariable("MenuNoTarget")));
-
-        self.OpenControls = [];
-        btnToks = StrTok(self GetSavedVariable("OpenControls"), ",");
-
-        foreach(btn in btnToks)
-            self.OpenControls[self.OpenControls.size] = btn;
-        
-        self.QuickControls = [];
-        btnToks = StrTok(self GetSavedVariable("QuickControls"), ",");
-
-        foreach(btn in btnToks)
-            self.QuickControls[self.QuickControls.size] = btn;
-
-        if(self GetSavedVariable("MainTheme") == "Rainbow")
-            self thread SmoothRainbowTheme();
-        else
-            self.MainTheme = GetDvarVector1("MainTheme" + self GetXUID());
-    }
-    else
-    {
-        self SaveMenuTheme();
-    }
-}
-
-function returnBool(boolVar)
-{
-    return (Is_True(boolVar) ? true : undefined);
-}
-
-function GetMaxOptions()
-{
-    if(self.MenuDesign == "Physics 'n' Flex")
-        return 6;
-    
-    if(Is_True(self.StealthUI))
-        return 5;
-    
-    if(IsDefined(self.MaxOptionsOverride))
-        return self.MaxOptionsOverride;
-    
-    MaxOptions = 10;
-
-    if(Is_True(self.DisableMenuInstructions))
-        MaxOptions++;
-    
-    if(self.BoolDisplay != "Boxes")
-    {
-        MaxOptions += 2;
-
-        if(Is_True(self.DisableMenuInstructions))
-            MaxOptions++;
-    }
-
-    if(Is_True(self.OptionCounter))
-        MaxOptions -= 2;
-    
-    return MaxOptions;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//verification.gsc
-function setVerification(access = 1, player, msg)
-{
-    if(IsString(access))
-    {
-        levels = GetAccessLevels();
-
-        if(isInArray(levels, access))
-        {
-            for(a = 0; a < levels.size; a++)
-            {
-                if(levels[a] == access)
-                {
-                    access = a;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            access = 1;
-        }
-    }
-
-    if(player IsHost() || player isDeveloper() || player getVerification() == access || player == self || player util::is_bot())
-    {
-        if(Is_True(msg))
-        {
-            if(player util::is_bot())
-                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Verification Of A Bot");
-            
-            if(player isHost())
-                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Status Of The Host");
-            
-            if(player isDeveloper())
-                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Status Of The Developer");
-            
-            if(player getVerification() == access)
-                return self iPrintlnBold("^1ERROR: ^7Player's Verification Is Already Set To ^2" + GetAccessLevels()[access]);
-            
-            if(player == self)
-                return self iPrintlnBold("^1ERROR: ^7You Can't Change Your Own Status");
-        }
-
-        return;
-    }
-    
-    player.accessLevel = GetAccessLevels()[access];
-    player iPrintlnBold("Your Status Has Been Set To ^2" + player.accessLevel);
-    
-    if(player isInMenu(true))
-        player closeMenu1();
-    
-    player.currentMenu = undefined;
-    player.menuCursor = undefined;
-    player.menu_parent = undefined;
-    player.menu_parentQM = undefined;
-    
-    player notify("endMenuMonitor");
-
-    if(Is_True(player.menuMonitor))
-        player.menuMonitor = BoolVar(player.menuMonitor);
-
-    if(Is_True(player.MenuInstructionsDisplay))
-        player.MenuInstructionsDisplay = BoolVar(player.MenuInstructionsDisplay);
-
-    if(player hasMenu())
-    {
-        player thread MenuInstructionsDisplay();
-        player thread menuMonitor();
-    }
-}
-
-function SetVerificationAllPlayers(access = 1, msg)
-{
-    if(IsString(access))
-    {
-        levels = GetAccessLevels();
-
-        if(isInArray(levels, access))
-        {
-            for(a = 0; a < levels.size; a++)
-            {
-                if(levels[a] == access)
-                {
-                    access = a;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            access = 1;
-        }
-    }
-
-    foreach(player in level.players)
-        self thread setVerification(access, player);
-    
-    if(Is_True(msg))
-        self iPrintlnBold("All Players Verification Set To ^2" + GetAccessLevels()[access]);
-}
-
-function getVerification()
-{
-    if(self util::is_bot())
-        return 0;
-    
-    if(!IsDefined(self.accessLevel))
-        return 1;
-
-    for(a = 0; a < GetAccessLevels().size; a++)
-    {
-        if(self.accessLevel == GetAccessLevels()[a])
-            return a;
-    }
-
-    return 1;
-}
-
-function hasMenu()
-{
-    return self getVerification() > 1;
-}
-
-function SavePlayerVerification(player)
-{
-    if(player IsHost() || player isDeveloper() || player util::is_bot() || !IsDefined(player.accessLevel) || player.accessLevel < 2)
-        return self iPrintlnBold("^1ERROR: ^7Couldn't Save Players Verification");
-    
-    SetDvar("ApparitionV_" + player GetXUID(), player getVerification());
-    self iPrintlnBold(CleanName(player getName()) + "'s Status Has Been ^2Saved");
-}
-
-function GetAccessLevels()
-{
-    return Array("Bot", "None", "Verified", "VIP", "Admin", "Co-Host", "Host", "Developer");
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//overrides.gsc
-function override_player_damage(eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime)
-{
-    if(Is_True(self.playerGodmode) || Is_True(self.PlayerDemiGod) || Is_True(self.NoExplosiveDamage) && zm_utility::is_explosive_damage(sMeansOfDeath) || Is_True(self.ControllableZombie) || Is_True(self.AC130) || Is_True(self.lander))
-    {
-        if(Is_True(self.PlayerDemiGod))
-            self FakeDamageFrom(vDir);
-        
-        return 0;
-    }
-
-    if(iDamage > self.health)
-    {
-        self.retained_perks = [];
-
-        if(Is_True(self._retain_perks))
-        {
-            perks = GetArrayKeys(level._custom_perks);
-
-            if(IsDefined(perks) && perks.size)
-            {
-                MenuPerks = [];
-                
-                for(a = 0; a < perks.size; a++)
-                    array::add(MenuPerks, perks[a], 0);
-                
-                for(a = 0; a < MenuPerks.size; a++)
-                {
-                    if(self HasPerk(MenuPerks[a]))
-                    {
-                        self.retained_perks[self.retained_perks.size] = MenuPerks[a];
-                    }
-                }
-            }
-        }
-    }
-
-    if(IsDefined(level.saved_overrideplayerdamage))
-        return [[ level.saved_overrideplayerdamage ]](eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
-    
-    if(IsDefined(self.saved_playeroverrideplayerdamage))
-        return [[ self.saved_playeroverrideplayerdamage ]](eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
-    
-    return zm::player_damage_override(eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
-}
-
-function override_zombie_damage(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
-{
-    if(zm_utility::is_magic_bullet_shield_enabled(self) || IsDefined(self.marked_for_death) || !IsDefined(player) || self zm_spawner::check_zombie_damage_callbacks(mod, hit_location, hit_origin, player, amount, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel))
-        return;
-    
-    self CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
-
-    if(IsDefined(level.saved_global_damage_func))
-        self thread [[ level.saved_global_damage_func ]](mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
-}
-
-function override_zombie_damage_ads(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
-{
-    if(zm_utility::is_magic_bullet_shield_enabled(self) || !IsDefined(player) || self zm_spawner::check_zombie_damage_callbacks(mod, hit_location, hit_origin, player, amount, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel))
-        return;
-    
-    self CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
-
-    if(IsDefined(level.saved_global_damage_func_ads))
-        self thread [[ level.saved_global_damage_func_ads ]](mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
-}
-
-function CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
-{
-    if(IsDefined(self))
-    {
-        if(IsDefined(level.ZombiesDamageFX))
-            thread DisplayZombieEffect(level.ZombiesDamageFX, hit_origin);
-        
-        if(IsDefined(player) && IsPlayer(player))
-        {
-            if(Is_True(player.ExtraGore) && IsDefined(level._effect["bloodspurt"]))
-            {
-                fx = SpawnFX(level._effect["bloodspurt"], hit_origin, direction_vec);
-
-                if(IsDefined(fx))
-                    TriggerFX(fx);
-            }
-            
-            if(IsDefined(player.hud_damagefeedback) && Is_True(player.ShowHitmarkers))
-                player DamageFeedBack();
-
-            if(IsDefined(player.PlayerInstaKill) && (player.PlayerInstaKill == "All" || player.PlayerInstaKill == "Melee" && mod == "MOD_MELEE"))
-            {
-                self.health = 1;
-                self DoDamage((self.health + 666), self.origin, player, self, hit_location, zm_utility::remove_mod_from_methodofdeath(mod));
-                player notify("zombie_killed");
-            }
-        }
-    }
-}
-
-function override_actor_killed(einflictor, attacker, idamage, smeansofdeath, weapon, vdir, shitloc, psoffsettime)
-{
-    if(game["state"] == "postgame")
-        return;
-    
-    if(IsDefined(level.ZombiesDeathFX))
-        thread DisplayZombieEffect(level.ZombiesDeathFX, self.origin);
-    
-    if(IsDefined(attacker) && IsPlayer(attacker))
-    {
-        if(Is_True(attacker.ExtraGore) && IsDefined(level._effect["bloodspurt"]))
-        {
-            fx = SpawnFX(level._effect["bloodspurt"], self.origin, vdir);
-
-            if(IsDefined(fx))
-                TriggerFX(fx);
-        }
-
-        if(IsDefined(attacker.hud_damagefeedback) && Is_True(attacker.ShowHitmarkers))
-            attacker DamageFeedBack();
-        
-        if(Is_True(level.initAllTheWeapons))
-        {
-            baseWeapon = (!IsVerkoMap() ? zm_weapons::get_base_weapon(weapon) : weapon);
-
-            if(baseWeapon == level.currentWeaponAllTheWeapons)
-                level.killsAllTheWeapons++;
-            
-            if(level.killsAllTheWeapons >= level.killGoalAllTheWeapons)
-            {
-                level.indexAllTheWeapons++;
-                level.killsAllTheWeapons = 0;
-            }
-        }
-    }
-    
-    if(Is_True(self.explodingzombie) || Is_True(self.ZombieFling) || Is_True(level.ZombieRagdoll) || IsDefined(idamage) && IsInt(idamage) && idamage == 699)
-    {
-        self thread zm_spawner::zombie_ragdoll_then_explode(VectorScale(vdir, 145), attacker);
-
-        if(Is_True(self.explodingzombie) && !Is_True(self.nuked))
-            self MagicGrenadeType(GetWeapon("frag_grenade"), self GetTagOrigin("j_mainroot"), (0, 0, 0), 0.01);
-    }
-    
-    if(IsDefined(level.saved_callbackactorkilled))
-        self thread [[ level.saved_callbackactorkilled ]](einflictor, attacker, idamage, smeansofdeath, weapon, vdir, shitloc, psoffsettime);
-}
-
-function override_player_points(damage_weapon, player_points)
-{
-    if(IsDefined(level.saved_player_score_override)) //Der Eisendrache and some custom maps use this override as well
-        player_points = self [[ level.saved_player_score_override ]](damage_weapon, player_points);
-    
-    if(IsDefined(self.DamagePointsMultiplier) || Is_True(self.DisableEarningPoints))
-        player_points = ((IsDefined(self.DamagePointsMultiplier) && !Is_True(self.DisableEarningPoints)) ? (player_points * self.DamagePointsMultiplier) : 0);
-    
-    return player_points;
-}
-
-function DamageFeedBack()
-{
-    if(!IsDefined(self.hud_damagefeedback))
-        return;
-    
-    if(IsDefined(self.HitMarkerColor))
-    {
-        if(IsString(self.HitMarkerColor) && self.HitMarkerColor == "Rainbow")
-        {
-            self.hud_damagefeedback thread HudRGBFade();
-        }
-        else
-        {
-            if(Is_True(self.hud_damagefeedback.RGBFade))
-                self.hud_damagefeedback.RGBFade = BoolVar(self.hud_damagefeedback.RGBFade);
-            
-            self.hud_damagefeedback.color = GetColorVec(self.HitMarkerColor);
-        }
-    }
-    
-    self zombie_utility::show_hit_marker();
-
-    if(IsDefined(self.HitmarkerFeedbackSound) && self.HitmarkerFeedbackSound != "None" && Is_True(self.hitsoundtracker))
-        self PlaySoundToPlayer(self.HitmarkerFeedbackSound, self);
-    
-    if(IsDefined(self.HitmarkerFeedback))
-        self.hud_damagefeedback SetShaderValues(self.HitmarkerFeedback, 24, 48);
-}
-
-function DisplayZombieEffect(fx, origin)
-{
-    if(!IsDefined(fx) || !IsString(fx) || !IsDefined(origin) || !IsVec(origin) || !IsDefined(level._effect) || !IsDefined(level._effect[fx]))
-        return;
-    
-    impactfx = SpawnScriptModel(origin, "tag_origin");
-
-    if(IsDefined(impactfx))
-    {
-        PlayFXOnTag(level._effect[fx], impactfx, "tag_origin");
-        impactfx deleteAfter(0.5);
-    }
-}
-
-function override_game_over_hud_elem(player, game_over, survived)
-{
-    game_over.alignx = "CENTER";
-    game_over.aligny = "MIDDLE";
-
-    game_over.horzalign = "CENTER";
-    game_over.vertalign = "MIDDLE";
-
-    game_over.y = (game_over.y - 130);
-    game_over.foreground = 1;
-    game_over.fontscale = 3;
-    game_over.alpha = 0;
-    game_over.color = (player hasMenu() ? level.RGBFadeColor : (1, 1, 1));
-    game_over.hidewheninmenu = 1;
-
-    game_over SetText((player hasMenu() ? "Thanks For Using " + GetMenuName() + " Developed By CF4_99" : &"ZOMBIE_GAME_OVER"));
-    game_over FadeOverTime(1);
-    game_over.alpha = 1;
-
-    if(player IsSplitScreen())
-    {
-        game_over.fontscale = 2;
-        game_over.y = (game_over.y + 40);
-    }
-
-    survived.alignx = "CENTER";
-    survived.aligny = "MIDDLE";
-
-    survived.horzalign = "CENTER";
-    survived.vertalign = "MIDDLE";
-
-    survived.y = (survived.y - 100);
-    survived.foreground = 1;
-    survived.fontscale = 2;
-    survived.alpha = 0;
-    survived.color = (player hasMenu() ? level.RGBFadeColor : (1, 1, 1));
-    survived.hidewheninmenu = 1;
-
-    if(player IsHost())
-        player thread HoldMeleeToRestart(survived);
-
-    if(player IsSplitScreen())
-    {
-        survived.fontscale = 1.5;
-        survived.y = (survived.y + 40);
-    }
-}
-
-function HoldMeleeToRestart(survived)
-{
-    if(!IsDefined(self))
-        return;
-    
-    self endon("disconnect");
-
-    while(survived.alpha != 1)
-        wait 0.05;
-    
-    survived SetText("Press & Hold [{+melee}] To Restart The Match");
-    goal = 15; //1.5 seconds
-
-    while(1)
-    {
-        count = 0;
-
-        while(self MeleeButtonPressed())
-        {
-            count++;
-
-            if(count >= goal)
-                break;
-            
-            wait 0.1;
-        }
-
-        if(count >= goal)
-            break;
-        
-        wait 0.01;
-    }
-
-    if(count >= goal)
-        ServerRestartGame();
-}
-
-function player_out_of_playable_area_monitor()
-{
-    return 0;
-}
-
-function player_intersection_tracker(player)
-{
-    return 1;
-}
-
-function WatchForMaxAmmo()
-{
-    if(Is_True(level.WatchForMaxAmmo))
-        return;
-    level.WatchForMaxAmmo = true;
-
-    level endon("EndMaxAmmoMonitor");
-
-    while(Is_True(level.ServerMaxAmmoClips))
-    {
-        level waittill("zmb_max_ammo_level");
-        
-        if(!Is_True(level.ServerMaxAmmoClips))
-            continue;
-        
-        foreach(player in level.players)
-        {
-            if(!IsDefined(player) || !Is_Alive(player))
-                continue;
-            
-            foreach(weapon in player GetWeaponsList(1))
-            {
-                if(!IsDefined(weapon) || weapon == level.weaponnone)
-                    continue;
-                
-                clipAmmo = player GetWeaponAmmoClip(weapon);
-                clipSize = weapon.clipsize;
-
-                if(!IsDefined(clipAmmo) || !IsDefined(clipSize))
-                    continue;
-
-                if(clipAmmo < clipSize)
-                    player SetWeaponAmmoClip(weapon, clipSize);
-
-                if(weapon.isdualwield && weapon.dualwieldweapon != level.weaponnone)
-                    player SetWeaponAmmoClip(weapon.dualwieldweapon, clipSize);
-            }
-        }
-    }
-}
-
-function wallbuy_should_upgrade_weapon_override()
-{
-    return true;
-}
-
-function onPlayerDisconnect()
-{
-    if(self IsHost())
-        return;
-    
-    foreach(player in level.players)
-    {
-        if(!IsDefined(player) || !IsPlayer(player) || player == self || !player hasMenu())
-            continue;
-        
-        //If a player is navigating another players options, and that player disconnects, it will kick them back to the player menu
-        if(IsDefined(player.menu_parent) && isInArray(player.menu_parent, "Players") && player.SelectedPlayer == self)
-        {
-            openMenu = player isInMenu(false);
-
-            if(openMenu)
-                player closeMenu1();
-            
-            player.menu_parent = [];
-            player.currentMenu = "Players";
-            player.menu_parent[player.menu_parent.size] = "Main";
-
-            if(openMenu)
-            {
-                player openMenu1();
-                player iPrintlnBold("^1ERROR: ^7Player Has Disconnected");
-            }
-        }
-        else if(player isInMenu() && player getCurrent() == "Players") //If a player is viewing the player menu when a player disconnects, it will refresh the player list
-        {
-            player RefreshMenu();
-        }
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-//stringtables.gsc
-function GobblegumName(name)
-{
-    return TableLookup("gamedata/stats/zm/zm_statstable.csv", 4, name, 3);
-}
-
-function ReturnCamoName(index)
-{
-    return TableLookupColumnForRow("gamedata/weapons/common/attachmenttable.csv", index, 3);
-}
-
-function ReturnRawCamoName(index)
-{
-    return TableLookupColumnForRow("gamedata/weapons/common/attachmenttable.csv", index, 4);
-}
-
-function ReturnAttachmentType(index)
-{
-    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 0, index, 2);
-}
-
-function ReturnAttachment(index)
-{
-    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 0, index, 4);
-}
-
-function ReturnAttachmentName(attachment)
-{
-    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 4, attachment, 3);
-}
-
-function ReturnAttachmentCombinations(attachment)
-{
-    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 4, attachment, 12);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//utilities.gsc
-function createText(font, fontSize, sort, text, align, relative, x, y, alpha, color)
-{
-    textElem = self hud::CreateFontString(font, fontSize);
-
-    textElem.hidewheninmenu = true;
-    textElem.archived = self ShouldArchive();
-    textElem.foreground = true;
-    textElem.player = self;
-    textElem.hidden = false;
-
-    textElem.sort = sort;
-    textElem.alpha = alpha;
-    textElem.color = (IsDefined(color) ? (IsVec(color) ? GetColorVec(color) : (IsString(color) ? level.RGBFadeColor : (0, 0, 0))) : (0, 0, 0));
-    textElem hud::SetPoint(align, relative, x, y);
-
-    if(IsInt(text) || IsFloat(text))
-        textElem SetValue(text);
-    else
-        textElem SetTextString(text);
-
-    self.hud_count++;
-
-    return textElem;
-}
-
-function LUI_createText(text, align, x, y, width, color)
-{    
-    textElem = self OpenLUIMenu("HudElementText");
-
-    //0 - LEFT | 1 - RIGHT | 2 - CENTER
-    self SetLUIMenuData(textElem, "text", text);
-    self SetLUIMenuData(textElem, "alignment", align);
-    self SetLUIMenuData(textElem, "x", x);
-    self SetLUIMenuData(textElem, "y", y);
-    self SetLUIMenuData(textElem, "width", width);
-    
-    color = GetColorVec(color);
-
-    self SetLUIMenuData(textElem, "red", color[0]);
-    self SetLUIMenuData(textElem, "green", color[1]);
-    self SetLUIMenuData(textElem, "blue", color[2]);
-
-    return textElem;
-}
-
-function createServerText(font, fontSize, sort, text, align, relative, x, y, alpha, color)
-{
-    textElem = hud::CreateServerFontString(font, fontSize);
-
-    textElem.hidewheninmenu = true;
-    textElem.archived = true;
-    textElem.foreground = true;
-    textElem.hidden = false;
-
-    textElem.sort = sort;
-    textElem.alpha = alpha;
-    textElem.color = GetColorVec(color);
-
-    textElem hud::SetPoint(align, relative, x, y);
-    textElem SetTextString(text);
-    
-    return textElem;
-}
-
-function createRectangle(align, relative, x, y, width, height, color, sort, alpha, shader)
-{
-    uiElement = NewClientHudElem(self);
-    
-    uiElement.elemType = "icon";
-    uiElement.children = [];
-    
-    uiElement.hidewheninmenu = true;
-    uiElement.archived = self ShouldArchive();
-    uiElement.foreground = true;
-    uiElement.hidden = false;
-    uiElement.player = self;
-
-    uiElement.align = align;
-    uiElement.relative = relative;
-    uiElement.xOffset = 0;
-    uiElement.yOffset = 0;
-    uiElement.sort = sort;
-
-    uiElement.color = (IsDefined(color) ? (IsVec(color) ? GetColorVec(color) : (IsString(color) ? level.RGBFadeColor : (0, 0, 0))) : (0, 0, 0));
-    uiElement.alpha = alpha;
-    
-    uiElement SetShaderValues(shader, width, height);
-    uiElement hud::SetParent(level.uiParent);
-    uiElement hud::SetPoint(align, relative, x, y);
-
-    self.hud_count++;
-    
-    return uiElement;
-}
-
-function LUI_createRectangle(align, x, y, width, height, color, shader, alpha)
-{
-    boxElem = self OpenLUIMenu("HudElementImage");
-
-    //0 - LEFT | 1 - RIGHT | 2 - CENTER
-    self SetLUIMenuData(boxElem, "alignment", align);
-    self SetLUIMenuData(boxElem, "x", x);
-    self SetLUIMenuData(boxElem, "y", y);
-    self SetLUIMenuData(boxElem, "width", width);
-    self SetLUIMenuData(boxElem, "height", height);
-    self SetLUIMenuData(boxElem, "alpha", alpha);
-    self SetLUIMenuData(boxElem, "material", shader);
-
-    color = GetColorVec(color);
-
-    self SetLUIMenuData(boxElem, "red", color[0]);
-    self SetLUIMenuData(boxElem, "green", color[1]);
-    self SetLUIMenuData(boxElem, "blue", color[2]);
-
-    return boxElem;
-}
-
-function createServerRectangle(align, relative, x, y, width, height, color, sort, alpha, shader)
-{
-    uiElement = NewHudElem();
-    
-    uiElement.elemType = "icon";
-    uiElement.children = [];
-    
-    uiElement.hidewheninmenu = true;
-    uiElement.archived = true;
-    uiElement.foreground = true;
-    uiElement.hidden = false;
-
-    uiElement.align = align;
-    uiElement.relative = relative;
-    uiElement.xOffset = 0;
-    uiElement.yOffset = 0;
-    uiElement.sort = sort;
-
-    uiElement.color = GetColorVec(color);
-    uiElement.alpha = alpha;
-    
-    uiElement SetShaderValues(shader, width, height);
-    uiElement hud::SetParent(level.uiParent);
-    uiElement hud::SetPoint(align, relative, x, y);
-    
-    return uiElement;
-}
-
-function createWaypoint(origin, shader = "damage_feedback_glow_orange", color = (1, 1, 1), alpha = 1)
-{
-    uiElement = NewClientHudElem(self);
-    uiElement.sort = 0;
-    uiElement.archived = 1;
-    uiElement.x = origin[0];
-    uiElement.y = origin[1];
-    uiElement.z = origin[2];
-    uiElement.alpha = alpha;
-    uiElement.color = color;
-    
-    uiElement SetShader("damage_feedback_glow_orange", 15, 15);
-    uiElement SetWaypoint(false);
-    
-    return uiElement;
-}
-
-function GetColorVec(color)
-{
-    colors = Array(0, 0, 0);
-
-    if(IsDefined(color) && IsVec(color))
-    {
-        for(a = 0; a < 3; a++)
-        {
-            c = (IsDefined(color[a]) ? color[a] : 0);
-
-            if(c < 0)
-                c = 0;
-            else if(c > 255)
-                c = 255;
-            
-            colors[a] = ((c >= 0 && c <= 1) ? c : (c / 255));
-        }
-    }
-
-    return (colors[0], colors[1], colors[2]);
-}
-
-function ShouldArchive()
-{
-    if(Is_True(self.StealthUI))
-        return false;
-    
-    if(!Is_Alive(self) || self.hud_count < 21)
-        return false;
-    
-    return true;
-}
-
-function DestroyHud()
-{
-    if(!IsDefined(self))
-        return;
-    
-    self destroy();
-
-    if(IsDefined(self.player) && IsPlayer(self.player))
-    {
-        self.player.hud_count--;
-
-        if(self.player.hud_count < 0)
-            self.player.hud_count = 0;
-    }
-}
-
-function SetTextString(text)
-{
-    if(!IsDefined(self) || !IsDefined(text))
-        return;
-    
-    text = AddToStringCache(text);
-
-    self.text = text;
-    self SetText(text);
-}
-
-function AddToStringCache(text)
-{
-    if(IsBlankString(text))
-        return "";
-
-    if(!IsDefined(level.uniqueStrings))
-        level.uniqueStrings = [];
-
-    if(!IsDefined(level.uniqueStringCount))
-        level.uniqueStringCount = 0;
-
-    IsUniqueString = IsUniqueString(text);
-
-    if(Is_True(IsUniqueString))
-    {
-        if(level.uniqueStringCount >= 1450)
-        {
-            text = "UNIQUE STRING LIMIT REACHED";
-
-            if(!IsDefined(level.uniqueStringLimitNotify))
-            {
-                bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^7Unique String Limit Has Been Reached. To Prevent Crashing, No More Unique Strings Will Be Created.");
-                level.uniqueStringLimitNotify = true;
-            }
-        }
-        else
-        {
-            level.uniqueStringCount++;
-
-            if(!IsDefined(level.uniqueStrings[text[0]]))
-                level.uniqueStrings[text[0]] = [];
-            
-            level.uniqueStrings[text[0]][level.uniqueStrings[text[0]].size] = text;
-        }
-    }
-    
-    if(!IsSubStr(text, "[{"))
-        text = MakeLocalizedString(text);
-
-    fixme = "}";
-
-    return text;
-}
-
-function IsUniqueString(text)
-{
-    if(!IsDefined(level.uniqueStrings) || !isInArray(GetArrayKeys(level.uniqueStrings), text[0]))
-        return true;
-    
-    return !isInArray(level.uniqueStrings[text[0]], text);
-}
-
-function IsBlankString(text)
-{
-    if(!IsDefined(text) || text == "")
-        return true;
-
-    for(a = 0; a < text.size; a++)
-    {
-        if(text[a] != " ")
-            return false;
-    }
-
-    return true;
-}
-
-function SetShaderValues(shader, width, height)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(!IsDefined(shader))
-    {
-        if(!IsDefined(self.shader))
-            return;
-        
-        shader = self.shader;
-    }
-    
-    if(!IsDefined(width))
-    {
-        if(!IsDefined(self.width))
-            return;
-        
-        width = self.width;
-    }
-    
-    if(!IsDefined(height))
-    {
-        if(!IsDefined(self.height))
-            return;
-        
-        height = self.height;
-    }
-    
-    self.shader = shader;
-    self.width = width;
-    self.height = height;
-
-    self SetShader(shader, width, height);
-}
-
-function hudMoveY(y, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self MoveOverTime(time);
-    
-    self.y = y;
-
-    if(time > 0)
-        wait time;
-}
-
-function hudMoveX(x, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self MoveOverTime(time);
-    
-    self.x = x;
-
-    if(time > 0)
-        wait time;
-}
-
-function hudMoveXY(x, y, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self MoveOverTime(time);
-    
-    self.x = x;
-    self.y = y;
-
-    if(time > 0)
-        wait time;
-}
-
-function hudFade(alpha, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self FadeOverTime(time);
-    
-    self.alpha = alpha;
-
-    if(time > 0)
-        wait time;
-}
-
-function hudFadeDestroy(alpha, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    self.fadeDestroy = true;
-    
-    if(time > 0)
-        self hudFade(alpha, time);
-    
-    self DestroyHud();
-}
-
-function hudFadeColor(color, time)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self FadeOverTime(time);
-    
-    self.color = GetColorVec(color);
-}
-
-function hudScaleOverTime(time, width, height)
-{
-    if(!IsDefined(self))
-        return;
-    
-    if(time > 0)
-        self ScaleOverTime(time, width, height);
-
-    self.width = width;
-    self.height = height;
-
-    if(time > 0)
-        wait time;
-}
-
-function HudRGBFade()
-{
-    if(!IsDefined(self) || Is_True(self.RGBFade))
-        return;
-    self.RGBFade = true;
-
-    self endon("death");
-    level endon("stop_intermission"); //For custom end game hud
-
-    while(IsDefined(self) && Is_True(self.RGBFade))
-    {
-        self.color = level.RGBFadeColor;
-        wait 0.01;
-    }
-}
-
-function ChangeFontscaleOverTime1(scale, time)
-{
-    if(IsDefined(self.fontScale) && self.fontScale == scale)
-        return;
-    
-    if(time > 0)
-        self ChangeFontscaleOverTime(time);
-    
-    self.fontScale = scale;
-}
-
-function destroyAll(arry)
-{
-    if(!IsDefined(arry))
-        return;
-    
-    keys = GetArrayKeys(arry);
-
-    for(a = 0; a < keys.size; a++)
-    {
-        if(IsArray(arry[keys[a]]))
-        {
-            foreach(value in arry[keys[a]])
-            {
-                if(IsDefined(value))
-                    value DestroyHud();
-            }
-        }
-        else
-        {
-            if(IsDefined(arry[keys[a]]))
-                arry[keys[a]] DestroyHud();
-        }
-    }
-}
-
-function getName()
-{
-    name = self.name;
-
-    if(!IsDefined(name) || !IsString(name) || name == "")
-        return "";
-
-    if(name[0] != "[")
-        return name;
-    
-    tagSize = -1;
-
-    for(a = 1; a < name.size; a++)
-    {
-        if(name[a] == "]")
-        {
-            tagSize = a;
-            break;
-        }
-    }
-
-    if(tagSize < 0 || (tagSize - 1) > 4)
-        return name;
-    
-    return GetSubStr(name, (tagSize + 1));
-}
-
-function GetMenuName()
-{
-    return "Apparition";
-}
-
-function GetColorNames()
-{
-    return Array("Red", "Green", "Blue", "Black", "White", "Gray", "Dodger Blue", "Ocean Blue", "Deep Blue", "Midnight Blue", "Sky Blue", "Cyan", "Aqua", "Teal", "Pink", "Hot Pink", "Rose", "Fuchsia", "Purple", "Lavender", "Violet", "Indigo", "Plasma Purple", "Neon Purple", "Crimson", "Fire Red", "Ruby", "Orange", "Deep Orange", "Yellow", "Gold", "Mint", "Lime", "Toxic Green", "Emerald");
-}
-
-function GetColorValues()
-{
-    return Array((255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0), (255, 255, 255), (128, 128, 128), (57, 152, 254), (0, 100, 200), (0, 0, 139), (25, 25, 112), (135, 206, 250), (0, 255, 255), (0, 255, 200), (0, 128, 128), (255, 110, 255), (255, 20, 147), (255, 102, 204), (255, 0, 255), (128, 0, 255), (200, 162, 255), (238, 130, 238), (75, 0, 130), (200, 0, 255), (170, 0, 255), (220, 20, 60), (255, 30, 30), (224, 17, 95), (255, 128, 0), (255, 80, 0), (255, 255, 0), (255, 215, 0), (152, 255, 152), (150, 255, 0), (0, 255, 100), (0, 201, 87));
-}
-
-function isInArray(arry, text)
-{
-    if(!IsDefined(arry) || !IsArray(arry) || !IsDefined(text))
-        return false;
-    
-    for(a = 0; a < arry.size; a++)
-    {
-        if(arry[a] == text)
-            return true;
-    }
-
-    return false;
-}
-
-function isInArrayKeys(arry, item)
-{
-    if(!IsDefined(arry) || !IsArray(arry) || !IsDefined(item))
-        return false;
-    
-    foreach(key in GetArrayKeys(arry))
-    {
-        if(key == item)
-            return true;
-    }
-    
-    return false;
-}
-
-function ArrayRemove(arry, value)
-{
-    if(!IsDefined(arry) || !IsDefined(value))
-        return;
-    
-    newArray = [];
-
-    for(a = 0; a < arry.size; a++)
-    {
-        if(arry[a] != value)
-            newArray[newArray.size] = arry[a];
-    }
-
-    return newArray;
-}
-
-function ArrayReverse(arry)
-{
-    newArray = [];
-
-    for(a = (arry.size - 1); a >= 0; a--)
-        newArray[newArray.size] = arry[a];
-
-    return newArray;
-}
-
-function ArrayGetClosest(arry, point)
-{
-    if(!IsDefined(arry) || !IsArray(arry) || !arry.size || !IsDefined(point) || !IsVec(point))
-        return;
-
-    closest = undefined;
-
-    foreach(ent in arry)
-    {
-        if(!IsDefined(ent) || !IsDefined(ent.origin) || !IsVec(ent.origin))
-            continue;
-        
-        if(!IsDefined(closest) || Closer(point, ent.origin, closest.origin))
-            closest = ent;
-    }
-
-    return closest;
-}
-
-function RemoveDuplicateEntArray(name)
-{
-    newarray = [];
-    savearray = [];
-
-    foreach(item in GetEntArray(name, "targetname"))
-    {
-        if(!isInArray(newarray, item.script_noteworthy))
-        {
-            newarray[newarray.size] = item.script_noteworthy;
-            savearray[savearray.size] = item;
-        }
-    }
-
-    return savearray;
-}
-
-function isConsole()
-{
-    return level.console;
-}
-
-function CleanString(strn, onlyReplace)
-{
-    if(!IsDefined(strn) || !IsString(strn) || strn == "")
-        return "";
-    
-    if(strn[0] == ToUpper(strn[0]))
-    {
-        if(IsSubStr(strn, " ") && !IsSubStr(strn, "_"))
-            return strn;
-    }
-    
-    strn = StrTok(ToLower(strn), "_");
-    str = "";
-
-    //List of strings what will be removed from the final string output
-    strings = Array("specialty", "zombie", "zm", "t7", "t6", "p7", "zmb", "zod", "ai", "g", "bg", "perk", "player", "weapon", "wpn", "aat", "bgb", "visionset", "equip", "craft", "der", "viewmodel", "mod", "fxanim", "moo", "moon", "zmhd", "fb", "bc", "asc", "vending", "part", "camo", "placeholder", "zmu", "hat", "ctl", "hd", "ori", "veh", "zhd", "isl");
-
-    //This will replace any '_' found in the string
-    replacement = " ";
-    
-    for(a = 0; a < strn.size; a++)
-    {
-        if(!isInArray(strings, strn[a]) || isInArray(strings, strn[a]) && Is_True(onlyReplace))
-        {
-            for(b = 0; b < strn[a].size; b++)
-                str += ((b != 0) ? strn[a][b] : ToUpper(strn[a][b]));
-            
-            if(a != (strn.size - 1))
-                str += replacement;
-        }
-    }
-    
-    return str;
-}
-
-function CleanName(name)
-{
-    if(!IsDefined(name) || !IsString(name) || name == "")
-        return "";
-    
-    str = "";
-    invalid = Array("^A", "^B", "^F", "^H", "^I", "^0", "^1", "^2", "^3", "^4", "^5", "^6", "^7", "^8", "^9", "j=");
-
-    for(a = 0; a < name.size; a++)
-    {
-        if(a < (name.size - 1))
-        {
-            if(isInArray(invalid, name[a] + name[(a + 1)]))
-            {
-                a += 2;
-
-                if(a >= name.size)
-                    break;
-            }
-        }
-        
-        if(IsDefined(name[a]) && a < name.size)
-            str += name[a];
-    }
-    
-    return str;
-}
-
-function CalcDistance(speed, origin, moveto)
-{
-    return Distance(origin, moveto) / speed;
-}
-
-function TraceBullet()
-{
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-    
-    return BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["position"];
-}
-
-function AngleNormalize180(angle)
-{
-    if(!IsDefined(angle))
-        return (0, 0, 0);
-    
-    v3 = Floor((angle * 0.0027777778));
-    result = (((angle * 0.0027777778) - v3) * 360.0);
-    angle = (((result - 360.0) < 0.0) ? (((angle * 0.0027777778) - v3) * 360.0) : (result - 360.0));
-
-    if(angle > 180)
-        angle -= 360;
-    
-    return angle;
-}
-
-function SpawnScriptModel(origin, model, angles = (0, 0, 0), time)
-{
-    if(!IsDefined(origin) || !IsVec(origin))
-        return;
-    
-    if(IsDefined(time))
-        wait time;
-
-    ent = Spawn("script_model", origin);
-
-    if(IsDefined(model))
-        ent SetModel(model);
-    
-    ent.angles = angles;
-
-    return ent;
-}
-
-function SpawnProp(origin = (0, 0, 0), model = "defaultactor", angles = (0, 0, 0), bounce = true, glow = true, triggerFunction, hintString)
-{
-    prop = SpawnScriptModel(origin, model, angles);
-
-    if(!IsDefined(prop))
-        return;
-    
-    prop.original_origin = origin;
-
-    if(IsDefined(triggerFunction) && IsFunctionPtr(triggerFunction))
-        prop.triggerFunction = triggerFunction;
-    
-    if(IsDefined(hintString) && IsString(hintString))
-        prop.hintString = hintString;
-    
-    if(Is_True(glow))
-        prop clientfield::set("powerup_fx", Int(Pow(2, RandomInt(3))));
-    
-    if(IsDefined(prop.triggerFunction) || Is_True(bounce))
-        prop thread ActivateProp(origin, bounce);
-
-    return prop;
-}
-
-function ActivateProp(origin, bounce = true)
-{
-    if(!IsDefined(self) || !IsDefined(origin) || Is_True(self.propActivated))
-        return;
-    
-    self.propActivated = true;
-    
-    self endon("death");
-
-    if(IsDefined(self.triggerFunction))
-    {
-        self MakeUsable();
-        self SetCursorHint("HINT_NOICON");
-
-        if(IsDefined(self.hintString))
-            self SetHintString(self.hintString);
-
-        self thread PropTrigger();
-    }
-    
-    if(Is_True(bounce))
-    {
-        while(IsDefined(self) && Is_True(self.propActivated))
-        {
-            for(a = 0; a < 2; a++)
-            {
-                if(!IsDefined(self) || !Is_True(self.propActivated))
-                    break;
-
-                self MoveTo(self.original_origin + (0, 0, (25 - (50 * a))), 1, 0.25, 0.25);
-                self RotateYaw(360, 1, 0.5, 0.5);
-                wait 1;
-            }
-
-            wait 0.1;
-        }
-    }
-}
-
-function PropTrigger()
-{
-    if(!IsDefined(self))
-        return;
-    
-    self endon("death");
-
-    while(IsDefined(self))
-    {
-        self waittill("trigger", player);
-
-        if(!IsDefined(self) || !IsPlayer(player) || !Is_Alive(player) || player isDown() || !IsDefined(self.triggerFunction) || !Is_True(self.propActivated))
-            continue;
-
-        player thread [[ self.triggerFunction ]]();
-    }
-}
-
-function deleteAfter(time)
-{
-    wait time;
-
-    if(IsDefined(self))
-        self Delete();
-}
-
-function SetTextFX(text, time = 3)
-{
-    if(!IsDefined(text) || !IsDefined(self))
-        return;
-    
-    self SetTextString(text);
-    self thread hudFade(1, 0.5);
-    self SetTypeWriterFX(38, Int((time * 1000)), 1000);
-    wait time;
-
-    if(IsDefined(self))
-        self hudFade(0, 0.5);
-
-    if(IsDefined(self))
-        self DestroyHud();
-}
-
-function PulseFXText(text, hud)
-{
-    if(!IsDefined(text) || !IsDefined(hud))
-        return;
-    
-    hud SetTextString(text);
-    
-    while(IsDefined(hud))
-    {
-        if(IsDefined(hud))
-        {
-            hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
-            hud SetCOD7DecodeFX(25, 2000, 500);
-        }
-
-        wait 3;
-    }
-}
-
-function TypeWriterFXText(text, hud)
-{
-    if(!IsDefined(text) || !IsDefined(hud))
-        return;
-    
-    hud SetTextString(text);
-
-    while(IsDefined(hud))
-    {
-        if(IsDefined(hud))
-        {
-            hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
-            hud SetTypeWriterFX(25, 2000, 500);
-        }
-
-        wait 3;
-    }
-}
-
-function RandomPosText(text, hud)
-{
-    if(!IsDefined(text) || !IsDefined(hud))
-        return;
-    
-    hud SetTextString(text);
-    
-    while(IsDefined(hud))
-    {
-        if(IsDefined(hud))
-        {
-            hud FadeOverTime(2);
-            hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
-            hud thread hudMoveXY(RandomIntRange(-300, 300), RandomIntRange(-200, 200), 2);
-        }
-        
-        wait 1.98;
-    }
-}
-
-function PulsingText(text, hud)
-{
-    if(!IsDefined(text) || !IsDefined(hud))
-        return;
-    
-    hud SetTextString(text);
-    savedFontScale = hud.FontScale;
-    
-    while(IsDefined(hud))
-    {
-        if(IsDefined(hud))
-        {
-            hud ChangeFontscaleOverTime1(savedFontScale + 0.8, 0.6);
-            hud hudFadeColor((RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255), 0.6);
-
-            wait 0.6;
-        }
-
-        if(IsDefined(hud))
-        {
-            hud ChangeFontscaleOverTime1(savedFontScale - 0.5, 0.6);
-            hud hudFadeColor((RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255), 0.6);
-
-            wait 0.6;
-        }
-    }
-}
-
-function FadingTextEffect(text, hud)
-{
-    if(!IsDefined(text) || !IsDefined(hud))
-        return;
-    
-    hud SetTextString(text);
-    hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
-
-    while(IsDefined(hud))
-    {
-        if(IsDefined(hud))
-            hud hudFade(0, 1);
-        
-        //There is a wait when hudFade is used. So we need to check to make sure the hud is still defined before trying to change the color
-        
-        if(IsDefined(hud))
-            hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
-        
-        wait 0.25;
-
-        if(IsDefined(hud))
-            hud hudFade(1, 1);
-        
-        wait 0.25;
-    }
-}
-
-function Keyboard(func, player)
-{
-    if(!self isInMenu())
-        return;
-    
-    self endon("disconnect");
-    
-    if(IsDefined(self.menuUI["scroller"]))
-    {
-        self.menuUI["scroller"] hudScaleOverTime(0.1, 16, 16);
-        self.menuUI["scroller"] hudFadeColor(self.MainTheme, 0.1);
-    }
-    
-    self SoftLockMenu(125);
-    
-    letters = [];
-    lettersTok = Array("0ANan=", "1BObo.", "2CPcp<", "3DQdq$", "4ERer#", "5FSfs-", "6GTgt{", "7HUhu}", "8IViv@", "9JWjw/", "^KXkx_", "!LYly[", "?MZmz]");
-    
-    for(a = 0; a < lettersTok.size; a++)
-    {
-        letters[a] = "";
-
-        for(b = 0; b < lettersTok[a].size; b++)
-            letters[a] += lettersTok[a][b] + "\n";
-    }
-
-    self.menuUI["kbString"] = self createText("objective", 1.1, 5, "", "CENTER", "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + 12), 1, (1, 1, 1));
-
-    for(a = 0; a < letters.size; a++)
-        self.menuUI["kbKeys" + a] = self createText("objective", 1.2, 5, letters[a], "CENTER", "CENTER", self.menuX + (self.menuUI["background"].width / 2) - (((lettersTok.size - 1) * 15) / 2) + (a * 15), (self.menuUI["kbString"].y + 20), 1, (1, 1, 1));
-    
-    if(IsDefined(self.menuUI["scroller"]))
-        self.menuUI["scroller"] hudMoveXY(self.menuUI["kbKeys0"].x - 8, (self.menuUI["kbKeys0"].y - 8), 0.01);
-    
-    cursY = 0;
-    cursX = 0;
-    strng = "";
-
-    self SetMenuInstructions(Array("[{+actionslot 1}]/[{+actionslot 2}]/[{+actionslot 3}]/[{+actionslot 4}] - Scroll", "[{+activate}] - Select", "[{+frag}] - Add Space", "[{+gostand}] - Confirm", "[{+melee}] - Backspace/Cancel"));
-    wait 0.5;
-    
-    while(1)
-    {
-        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
-        {
-            cursY += (self ActionSlotOneButtonPressed() ? -1 : 1);
-
-            if(cursY < 0 || cursY > 5)
-                cursY = ((cursY < 0) ? 5 : 0);
-            
-            if(IsDefined(self.menuUI["scroller"]))
-                self.menuUI["scroller"] thread hudMoveY((self.menuUI["kbKeys0"].y - 8) + (14.5 * cursY), 0.05);
-            
-            wait 0.05;
-        }
-        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
-        {
-            fixDir = (self GamepadUsedLast() ? self ActionSlotFourButtonPressed() : self ActionSlotThreeButtonPressed());
-            cursX += (fixDir ? 1 : -1);
-
-            if(cursX < 0 || cursX > 12)
-                cursX = ((cursX < 0) ? 12 : 0);
-            
-            if(IsDefined(self.menuUI["scroller"]))
-                self.menuUI["scroller"] thread hudMoveX((self.menuUI["kbKeys0"].x - 8) + (15 * cursX), 0.05);
-            
-            wait 0.05;
-        }
-        else if(self UseButtonPressed())
-        {
-            if(strng.size < 45)
-            {
-                strng += lettersTok[cursX][cursY];
-                self.menuUI["kbString"] SetTextString(strng);
-            }
-            else
-            {
-                self iPrintlnBold("^1ERROR: ^7Max String Size Reached");
-            }
-
-            wait 0.15;
-        }
-        else if(self FragButtonPressed())
-        {
-            if(strng.size < 45)
-            {
-                strng += " ";
-                self.menuUI["kbString"] SetTextString(strng);
-            }
-            else
-            {
-                self iPrintlnBold("^1ERROR: ^7Max String Size Reached");
-            }
-
-            wait 0.1;
-        }
-        else if(self JumpButtonPressed())
-        {
-            if(!strng.size)
-                break;
-
-            if(IsDefined(func))
-            {
-                if(IsDefined(player))
-                    self ExeFunction(func, strng, player);
-                else
-                    self ExeFunction(func, strng);
-            }
-            else
-            {
-                returnString = true;
-            }
-
-            break;
-        }
-        else if(self MeleeButtonPressed())
-        {
-            if(strng.size)
-            {
-                backspace = "";
-
-                for(a = 0; a < (strng.size - 1); a++)
-                    backspace += strng[a];
-
-                strng = backspace;
-                self.menuUI["kbString"] SetTextString(strng);
-
-                wait 0.1;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        wait 0.05;
-    }
-    
-    self SoftUnlockMenu();
-    self SetMenuInstructions();
-
-    if(IsDefined(returnString))
-        return strng;
-}
-
-function NumberPad(func, player, param)
-{
-    if(!self isInMenu())
-        return;
-    
-    self endon("disconnect");
-
-    if(IsDefined(self.menuUI["scroller"]))
-    {
-        self.menuUI["scroller"] hudScaleOverTime(0.1, 14, 14);
-        self.menuUI["scroller"] hudFadeColor(self.MainTheme, 0.1);
-    }
-    
-    self SoftLockMenu(50);
-    
-    letters = [];
-
-    for(a = 0; a < 10; a++)
-        letters[a] = a;
-    
-    self.menuUI["kbString"] = self createText("objective", 1.2, 5, 0, "CENTER", "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + 12), 1, (1, 1, 1));
-
-    for(a = 0; a < letters.size; a++)
-        self.menuUI["kbKeys" + a] = self createText("objective", 1.2, 5, letters[a], "CENTER", "CENTER", self.menuX + (self.menuUI["background"].width / 2) - (((letters.size - 1) * 15) / 2) + (a * 15), (self.menuUI["kbString"].y + 20), 1, (1, 1, 1));
-    
-    if(IsDefined(self.menuUI["scroller"]))
-        self.menuUI["scroller"] hudMoveXY(self.menuUI["kbKeys0"].x - 7, (self.menuUI["kbKeys0"].y - 7), 0.01);
-    
-    cursX = 0;
-    stringLimit = 10;
-    strng = "0";
-
-    self SetMenuInstructions(Array("[{+actionslot 3}]/[{+actionslot 4}] - Scroll", "[{+activate}] - Select", "[{+gostand}] - Confirm", "[{+melee}] - Backspace/Cancel"));
-    wait 0.5;
-    
-    while(1)
-    {
-        if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
-        {
-            fixDir = (self GamepadUsedLast() ? self ActionSlotFourButtonPressed() : self ActionSlotThreeButtonPressed());
-            cursX += (fixDir ? 1 : -1);
-
-            if(cursX < 0 || cursX > 9)
-                cursX = ((cursX < 0) ? 9 : 0);
-
-            if(IsDefined(self.menuUI["scroller"]))
-                self.menuUI["scroller"] thread hudMoveX((self.menuUI["kbKeys0"].x - 7) + (15 * cursX), 0.05);
-            
-            wait 0.05;
-        }
-        else if(self UseButtonPressed())
-        {
-            if(strng.size < stringLimit)
-            {
-                if(strng == "0")
-                    strng = "";
-                
-                strng += letters[cursX];
-                self.menuUI["kbString"] SetValue(Int(strng));
-            }
-
-            wait 0.15;
-        }
-        else if(self JumpButtonPressed())
-        {
-            if(!strng.size)
-                strng = "0";
-            
-            if(IsDefined(func))
-            {
-                if(IsDefined(player))
-                    self ExeFunction(func, Int(strng), player, param);
-                else
-                    self ExeFunction(func, Int(strng));
-            }
-            else
-            {
-                returnValue = true;
-            }
-
-            break;
-        }
-        else if(self MeleeButtonPressed())
-        {
-            if(strng.size && strng != "0" && strng != "")
-            {
-                backspace = "";
-
-                if(strng.size > 1)
-                {
-                    for(a = 0; a < (strng.size - 1); a++)
-                        backspace += strng[a];
-                    
-                    strng = backspace;
-                }
-                else
-                {
-                    strng = "0";
-                }
-                
-                self.menuUI["kbString"] SetValue(Int(strng));
-                wait 0.1;
-            }
-            else
-            {
-                break;
-            }
-        }
-        
-        wait 0.05;
-    }
-    
-    self SoftUnlockMenu();
-    self SetMenuInstructions();
-
-    if(IsDefined(returnValue))
-        return Int(strng);
-}
-
-function RGBFade()
-{
-    if(IsDefined(level.RGBFadeColor))
-        return;
-
-    hue = RandomFloatRange(0, 1);
-    value = 0.95;
-
-    while(1)
-    {
-        scaled = (hue * 6);
-        step = (Int(scaled) % 6);
-
-        switch(step)
-        {
-            case 0:
-                level.RGBFadeColor = (value, ((scaled - step) * value), 0);
-                break;
-            
-            case 1:
-                level.RGBFadeColor = (((1 - (scaled - step)) * value), value, 0);
-                break;
-            
-            case 2:
-                level.RGBFadeColor = (0, value, ((scaled - step) * value));
-                break;
-            
-            case 3:
-                level.RGBFadeColor = (0, ((1 - (scaled - step)) * value), value);
-                break;
-            
-            case 4:
-                level.RGBFadeColor = (((scaled - step) * value), 0, value);
-                break;
-            
-            default:
-                level.RGBFadeColor = (value, 0, ((1 - (scaled - step)) * value));
-                break;
-        }
-
-        hue += 0.001; //speed -- The faster it goes, the more choppy it will look
-
-        if(hue >= 1)
-            hue -= 1;
-
-        wait 0.01;
-    }
-}
-
-function isDeveloper()
-{
-    return (self GetXUID() == "1100001444ecf60" || self GetXUID() == "1100001494c623f" || self GetXUID() == "110000109f81429" || self GetXUID() == "110000142b9f2ba" || self GetXUID() == "1100001186a8f57");
-}
-
-function isDown()
-{
-    if(!IsDefined(self) || !IsPlayer(self) || !Is_Alive(self))
-        return false;
-    
-    return IsDefined(self.revivetrigger);
-}
-
-function Is_Alive(player)
-{
-    return (IsAlive(player) && IsDefined(player.sessionstate) && player.sessionstate != "spectator");
-}
-
-function CanControl(ai)
-{
-    if(!IsDefined(ai))
-        return false;
-    
-    if(!IsAI(ai))
-        return false;
-    
-    if(!IsAlive(ai))
-        return false;
-    
-    if(Is_True(ai.is_traversing))
-        return false;
-    
-    if(Is_True(ai.is_leaping))
-        return false;
-    
-    if(Is_True(ai.barricade_enter))
-        return false;
-    
-    if(IsDefined(ai.archetype) && ai.archetype == "zombie" && !zm_behavior::inplayablearea(ai))
-        return false;
-    
-    return true;
-}
-
-function isPlayerLinked(exclude)
-{
-    ents = GetEntArray("script_model", "classname");
-
-    if(!IsDefined(ents) || !ents.size)
-        return false;
-
-    for(a = 0; a < ents.size; a++)
-    {
-        if(self IsLinkedTo(ents[a]) && (!IsDefined(exclude) || ents[a] != exclude))
-            return true;
-    }
-
-    return false;
-}
-
-function ReturnPerkName(perk)
-{
-    perk = ToLower(perk);
-    
-    switch(perk)
-    {
-        case "additionalprimaryweapon":
-            return "Mule Kick";
-        
-        case "doubletap2":
-            return "Double Tap";
-        
-        case "deadshot":
-            return "Deadshot Daiquiri";
-        
-        case "armorvest":
-            return "Jugger-Nog";
-        
-        case "quickrevive":
-            return "Quick Revive";
-        
-        case "fastreload":
-            return "Speed Cola";
-        
-        case "staminup":
-            return "Stamin-Up";
-        
-        case "widowswine":
-            return "Widow's Wine";
-        
-        case "electriccherry":
-            return "Electric Cherry";
-        
-        case "gpsjammer":
-            return "Snail's Pace Slurpee";
-        
-        case "vultureaid":
-            return "Vulture Aid";
-        
-        case "directionalfire":
-            return "Vigor Rush";
-        
-        case "phdflopper":
-            return "PHD Flopper";
-        
-        case "jetquiet":
-            return "Fighter's Fizz";
-        
-        case "immunecounteruav":
-            return "I.C.U.";
-        
-        case "combat efficiency":
-            return "Elemental Pop";
-        
-        case "nottargetedbyairsupport":
-            return "Ethereal Razor";
-        
-        case "loudenemies":
-            return "PHD Flopper";
-        
-        case "quieter":
-            return "I.C.U.";
-        
-        default:
-            return "Unknown Perk";
-    }
-}
-
-function ReturnPowerupName(name)
-{
-    name = ToLower(name);
-    
-    switch(name)
-    {
-        case "code_cylinder_red":
-            return "Red Cylinder";
-        
-        case "code_cylinder_yellow":
-            return "Yellow Cylinder";
-        
-        case "code_cylinder_blue":
-            return "Blue Cylinder";
-        
-        case "monkey_swarm":
-            return "Monkey Swarm";
-        
-        case "insta_kill_ug":
-            return "Insta-Kill UG";
-        
-        case "beast_mana":
-            return "Beast Mana";
-        
-        case "bonfire_sale":
-            return "Bonfire Sale";
-        
-        case "bonus_points_player":
-            return "Bonus Points Player";
-        
-        case "bonus_points_team":
-            return "Bonus Points Team";
-        
-        case "carpenter":
-            return "Carpenter";
-        
-        case "demonic_rune_lor":
-            return "Runic: Lor";
-        
-        case "demonic_rune_ulla":
-            return "Runic: Ulla";
-        
-        case "demonic_rune_oth":
-            return "Runic: Oth";
-        
-        case "demonic_rune_zor":
-            return "Runic: Zor";
-        
-        case "demonic_rune_mar":
-            return "Runic: Mar";
-        
-        case "demonic_rune_uja":
-            return "Runic: Uja";
-        
-        case "castle_tram_token":
-            return "Tram Token";
-        
-        case "double_points":
-            return "Double Points";
-        
-        case "free_perk":
-            return "Free Perk";
-        
-        case "empty_perk":
-            return "Empty Perk";
-        
-        case "fire_sale":
-            return "Fire Sale";
-        
-        case "full_ammo":
-            return "Max Ammo";
-        
-        case "genesis_random_weapon":
-            return "Random Weapon";
-        
-        case "insta_kill":
-            return "Insta-Kill";
-        
-        case "island_seed":
-            return "Seed";
-        
-        case "nuke":
-            return "Nuke";
-        
-        case "shield_charge":
-            return "Shield Charge";
-        
-        case "minigun":
-            return "Death Machine";
-        
-        case "ww_grenade":
-            return "Widow's Wine Grenades";
-        
-        case "zombie_blood":
-            return "Zombie Blood";
-        
-        default:
-            return CleanString(name);
-    }
-}
-
-function ReturnMapName(map = level.script)
-{
-    switch(map)
-    {
-        case "zm_zod":
-            return "Shadows Of Evil";
-        
-        case "zm_factory":
-            return "The Giant";
-        
-        case "zm_castle":
-            return "Der Eisendrache";
-        
-        case "zm_island":
-            return "Zetsubou No Shima";
-        
-        case "zm_stalingrad":
-            return "Gorod Krovi";
-        
-        case "zm_genesis":
-            return "Revelations";
-        
-        case "zm_prototype":
-            return "Nacht Der Untoten";
-        
-        case "zm_asylum":
-            return "Verruckt";
-        
-        case "zm_sumpf":
-            return "Shi No Numa";
-        
-        case "zm_theater":
-            return "Kino Der Toten";
-        
-        case "zm_cosmodrome":
-            return "Ascension";
-        
-        case "zm_temple":
-            return "Shangri-La";
-
-        case "zm_moon":
-            return "Moon";
-        
-        case "zm_tomb":
-            return "Origins";
-        
-
-        //supported custom maps
-        case "zm_prison":
-            return "Mob Of The Dead";
-        
-        case "zm_die":
-            return "Die Rise";
-        
-        case "zm_vk_tra_sur_busdepot":
-            return "Bus Depot";
-        
-        case "zm_vk_tra_sur_tunnel":
-            return "Tunnel";
-
-        case "zm_vk_tra_sur_diner":
-            return "Diner";
-        
-        case "zm_vk_tra_sur_farm":
-            return "Farm";
-        
-        case "zm_der_riese":
-            return "Der Riese: Declassified";
-        
-        case "zm_leviathan":
-            return "Leviathan";
-        
-        default:
-            return "Unknown";
-    }
-}
-
-function IsSupportedCustomMap(map = level.script)
-{
-    switch(map)
-    {
-        case "zm_prison":
-        case "zm_die":
-        case "zm_vk_tra_sur_busdepot":
-        case "zm_vk_tra_sur_tunnel":
-        case "zm_vk_tra_sur_diner":
-        case "zm_vk_tra_sur_farm":
-        case "zm_der_riese":
-        case "zm_leviathan":
-            return true;
-        
-        default:
-            return false;
-    }
-}
-
-function IsVerkoMap(map = level.script)
-{
-    return IsSubStr(map, "zm_vk_tra_");
-}
-
-function TriggerUniTrigger(struct, trigger_notify, time) //For Basic Uni Triggers
-{
-    if(!IsDefined(struct) || !IsDefined(trigger_notify))
-        return;
-
-    if(!IsDefined(time))
-        time = 0.01;
-
-    if(IsArray(struct))
-    {
-        foreach(index, entity in struct)
-        {
-            if(!IsDefined(entity))
-                continue;
-            
-            entity notify(trigger_notify);
-            wait time;
-        }
-    }
-    else
-    {
-        struct notify(trigger_notify);
-    }
-}
-
-function disconnect()
-{
-    ExitLevel(false);
-}
-
-function DisablePlayerInfo()
-{
-    level.DisablePlayerInfo = BoolVar(level.DisablePlayerInfo);
-}
-
-function IncludeIPInfo()
-{
-    level.IncludeIPInfo = BoolVar(level.IncludeIPInfo);
-}
-
-function SetMapSpawn(plyer, type)
-{
-    SetDvar(level.script + "Spawn" + (Int(StrTok(plyer, "Player ")[0]) - 1), ((IsDefined(type) && type == "Set") ? self.origin : ""));
-}
-
-function AntiEndGame()
-{
-    level.AntiEndGame = BoolVar(level.AntiEndGame);
-
-    if(Is_True(level.AntiEndGame))
-    {
-        foreach(player in level.players)
-        {
-            if(Is_True(player.AntiEndGameHandler))
-                continue;
-            
-            player.AntiEndGameHandler = true;
-            player thread WatchForEndRound();
-        }
-    }
-    else
-    {
-        level notify("EndAntiEndGame");
-
-        level.hostforcedend = false;
-        level.forcedend = false;
-        level.gameended = false;
-
-        foreach(player in level.players)
-        {
-            if(Is_True(player.AntiEndGameHandler))
-                player.AntiEndGameHandler = BoolVar(player.AntiEndGameHandler);
-        }
-    }
-}
-
-function WatchForEndRound()
-{
-    self endon("disconnect");
-    level endon("EndAntiEndGame");
-
-    while(Is_True(level.AntiEndGame))
-    {
-        if(Is_True(level.hostforcedend))
-            level.hostforcedend = false;
-        
-        if(Is_True(level.forcedend))
-            level.forcedend = false;
-        
-        if(Is_True(level.gameended))
-            level.gameended = false;
-
-        self waittill("menuresponse", menu, response);
-
-        if(response != "endround")
-            continue;
-        
-        if(self IsHost())
-            break;
-
-        level.hostforcedend = true;
-        level.forcedend = true;
-        level.gameended = true;
-
-        self iPrintlnBold("^1" + ToUpper(GetMenuName()) + ": ^7Blocked End Game Response");
-        bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^2" + CleanName(self getName()) + " ^7Tried To End The Game");
-        wait 0.5; //buffer
-    }
-}
-
-function EntityCountDisplay()
-{
-    self endon("disconnect");
-
-    self.EntityCountDisplay = BoolVar(self.EntityCountDisplay);
-    SetDvar("EntityCountDisplay", Is_True(self.EntityCountDisplay));
-    
-    if(Is_True(self.EntityCountDisplay))
-    {
-        GSpawnMax = ReturnMapGSpawnLimit();
-
-        while(Is_True(self.EntityCountDisplay))
-        {
-            if(Is_Alive(self) && (!IsDefined(self.EntityCountHud) || !self.EntityCountHud.size))
-            {
-                if(!IsDefined(self.EntityCountHud))
-                    self.EntityCountHud = [];
-                
-                xPos = 5;
-                yPos = 5;
-
-                self.EntityCountHud[0] = self LUI_createRectangle(0, (xPos - 3), (yPos - 1), ((IsDefined(GSpawnMax) && GSpawnMax) ? 217 : 145), 28, self.MainTheme, "white", 1);
-                self.EntityCountHud[1] = self LUI_createRectangle(0, (xPos - 2), yPos, (self GetLUIMenuData(self.EntityCountHud[0], "width") - 2), (self GetLUIMenuData(self.EntityCountHud[0], "height") - 2), (42, 42, 42), "white", 1);
-                
-                self.EntityCountHud[2] = self LUI_createText(((IsDefined(GSpawnMax) && GSpawnMax) ? "Entity Count(Max: " + GSpawnMax + "): " : "Entity Count: "), 0, xPos, yPos, ((IsDefined(GSpawnMax) && GSpawnMax) ? 172 : 100), (1, 1, 1));
-                self.EntityCountHud[3] = self LUI_createText(GetEntArray().size, 0, self GetLUIMenuData(self.EntityCountHud[2], "x") + self GetLUIMenuData(self.EntityCountHud[2], "width"), self GetLUIMenuData(self.EntityCountHud[2], "y"), 255, (1, 1, 1));
-            }
-            else
-            {
-                if(IsDefined(self.EntityCountHud) && self.EntityCountHud.size)
-                {
-                    if(Is_Alive(self))
-                    {
-                        if(IsDefined(self.EntityCountHud[3]))
-                            self SetLUIMenuData(self.EntityCountHud[3], "text", GetEntArray().size);
-                    }
-                    else
-                    {
-                        for(a = 0; a < self.EntityCountHud.size; a++)
-                        {
-                            if(IsDefined(self.EntityCountHud[a]))
-                                self CloseLUIMenu(self.EntityCountHud[a]);
-                        }
-                        
-                        self.EntityCountHud = undefined;
-                    }
-                }
-                
-            }
-
-            wait 0.01;
-        }
-    }
-    else
-    {
-        if(IsDefined(self.EntityCountHud) && self.EntityCountHud)
-        {
-            for(a = 0; a < self.EntityCountHud.size; a++)
-            {
-                if(IsDefined(self.EntityCountHud[a]))
-                    self CloseLUIMenu(self.EntityCountHud[a]);
-            }
-        }
-
-        self.EntityCountHud = undefined;
-    }
-}
-
-function GSpawnProtection()
-{
-    GSpawnMax = ReturnMapGSpawnLimit();
-
-    if(!IsDefined(GSpawnMax) || !GSpawnMax)
-        return;
-    
-    level.GSpawnProtection = BoolVar(level.GSpawnProtection);
-
-    if(Is_True(level.GSpawnProtection))
-    {
-        while(Is_True(level.GSpawnProtection))
-        {
-            entityCount = GetEntArray().size;
-            ents = ArrayReverse(GetEntArray("script_model", "classname"));
-
-            if(entityCount > (GSpawnMax - 20))
-            {
-                amount = ((entityCount >= GSpawnMax) ? 30 : 5);
-
-                for(a = 0; a < amount; a++)
-                {
-                    if(IsDefined(ents[a]))
-                        ents[a] Delete();
-                }
-                
-                bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^7G_Spawn Crash Prevented || " + entityCount + " -> " + GetEntArray().size);
-            }
-            
-            wait 0.05;
-        }
-    }
-}
-
-function ReturnMapGSpawnLimit()
-{
-    switch(level.script)
-    {
-        case "zm_prototype":
-            return 815;
-        
-        case "zm_asylum":
-            return 850;
-        
-        case "zm_cosmodrome":
-            return 890;
-        
-        case "zm_theater":
-        case "zm_sumpf":
-        case "zm_factory":
-        case "zm_vk_tra_sur_tunnel":
-        case "zm_vk_tra_sur_busdepot":
-        case "zm_prison":
-            return 915;
-        
-        case "zm_tomb":
-        case "zm_moon":
-        case "zm_temple":
-        case "zm_der_riese":
-            return 950;
-        
-        case "zm_stalingrad":
-            return 980;
-        
-        case "zm_castle":
-        case "zm_genesis":
-        case "zm_vk_tra_sur_diner":
-        case "zm_vk_tra_sur_farm":
-            return 1000;
-        
-        case "zm_zod":
-            return 1015;
-        
-        case "zm_die":
-        case "zm_island":
-            return 1050;
-        
-        case "zm_leviathan":
-            return 1450;
-        
-        default:
-            return 0;
-    }
-}
-
-function TrisLines()
-{
-    value = GetDvarString("r_showTris");
-    SetDvar("r_showTris", ((IsDefined(value) && value == "1") ? "0" : "1"));
-}
-
-function DevGUIInfo()
-{
-    value = GetDvarString("ui_lobbyDebugVis");
-    SetDvar("ui_lobbyDebugVis", ((IsDefined(value) && value == "1") ? "0" : "1"));
-}
-
-function DisableFog()
-{
-    value = GetDvarString("r_fog");
-    SetDvar("r_fog", ((IsDefined(value) && value == "1") ? "0" : "1"));
-}
-
-function ServerCheats()
-{
-    value = GetDvarString("sv_cheats");
-    SetDvar("sv_cheats", ((IsDefined(value) && value == "1") ? "0" : "1"));
-}
-
-function SetDeveloperMode()
-{
-    value = GetDvarInt("developer");
-    SetDvar("developer", ((IsDefined(value) && value == 0 || !IsDefined(value)) ? 2 : 0));
-}
-
-function GetGroundPos(position)
-{
-    return BulletTrace((position + (0, 0, 50)), (position - (0, 0, 1000)), 0, undefined)["position"];
-}
-
-function MenuCredits()
-{
-    if(Is_True(self.CreditsPlaying))
-        return;
-    self.CreditsPlaying = true;
-    
-    self endon("disconnect");
-    
-    self SoftLockMenu(220, true);
-    MenuTextStartCredits = Array("^1" + GetMenuName(), "The Biggest & Best Menu For ^1Black Ops 3 Zombies", "Developed By: ^1CF4_99", "Discord.gg/^1apparitionbo3", " ", "^1Extinct", "Ideas", "Suggestions", "Constructive Criticism", "His Spec-Nade", " ", "^1ItsFebiven", "Ideas", "Suggestions", " ", "^1CraftyCritter", "BO3 GSC Compiler", " ", "^1Joel", "Testing", "Breaking Shit", "Bug Reporting", " ", "^1Thanks For Choosing " + GetMenuName(), "YouTube: ^1CF4_99", "Discord: ^1cf4_99");
-    
-    self thread MenuCreditsStart(MenuTextStartCredits);
-    self SetMenuInstructions("[{+melee}] - Exit Menu Credits");
-    
-    while(Is_True(self.CreditsPlaying))
-    {
-        if(self MeleeButtonPressed())
-            break;
-        
-        wait 0.025;
-    }
-    
-    if(Is_True(self.CreditsPlaying))
-        self.CreditsPlaying = BoolVar(self.CreditsPlaying);
-    
-    self notify("EndMenuCredits");
-    self SetMenuInstructions();
-    self SoftUnlockMenu();
-}
-
-function MenuCreditsStart(creditArray)
-{
-    self endon("disconnect");
-    self endon("EndMenuCredits");
-    
-    self.menuUI["MenuCreditsHud"] = [];
-    moveTime = 10;
-    title = true;
-
-    for(a = 0; a < creditArray.size; a++)
-    {
-        if(creditArray[a] != " ")
-        {
-            self.menuUI["MenuCreditsHud"][a] = self createText("objective", (title ? 1.4 : 1.1), 5, "", "CENTER", "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + (self.menuUI["background"].height - 8)), 0, (1, 1, 1));
-            self thread CreditsFadeIn(self.menuUI["MenuCreditsHud"][a], creditArray[a], moveTime, 0.5);
-            
-            title = false;
-            wait (moveTime / 12);
-        }
-        else
-        {
-            title = true;
-            wait (moveTime / 4);
-        }
-    }
-    
-    wait moveTime;
-
-    if(Is_True(self.CreditsPlaying))
-        self.CreditsPlaying = BoolVar(self.CreditsPlaying);
-}
-
-function CreditsFadeIn(hud, text, moveTime, fadeTime)
-{
-    if(!IsDefined(hud))
-        return;
-    
-    self endon("EndMenuCredits");
-    
-    self thread credits_delete(hud);
-    hud SetTextString(text);
-    hud thread hudFade(1, fadeTime);
-    hud thread hudMoveY((self.menuUI["background"].y + 12), moveTime);
-    
-    wait (moveTime - fadeTime);
-    
-    if(IsDefined(hud))
-        hud hudFadeDestroy(0, fadeTime);
-}
-
-function credits_delete(hud)
-{
-    if(!IsDefined(hud))
-        return;
-    
-    self endon("disconnect");
-    
-    self waittill("EndMenuCredits");
-    
-    if(IsDefined(hud))
-        hud DestroyHud();
-}
-
-function DebugiPrint(message)
-{
-    if(!IsDefined(self))
-    {
-        foreach(player in level.players)
-            player DebugiPrint(message);
-        
-        return;
-    }
-    
-    if(!IsDefined(self.PrintMessageQueue))
-        self.PrintMessageQueue = [];
-    
-    if(!IsDefined(self.PrintMessageInt) || (IsDefined(self.PrintMessageInt) && self.PrintMessageInt > 4))
-        self.PrintMessageInt = 0;
-    
-    if(IsDefined(self.PrintMessageQueue[self.PrintMessageInt]))
-    {
-        self CloseLUIMenu(self.PrintMessageQueue[self.PrintMessageInt]);
-        self.PrintMessageQueue[self.PrintMessageInt] = undefined;
-
-        self notify("PrintDeleted" + self.PrintMessageInt);
-    }
-    
-    for(a = 0; a < 5; a++)
-    {
-        if(IsDefined(self.PrintMessageQueue[a]))
-            self SetLUIMenuData(self.PrintMessageQueue[a], "y", (self GetLUIMenuData(self.PrintMessageQueue[a], "y") - 22));
-    }
-    
-    self.PrintMessageQueue[self.PrintMessageInt] = self LUI_createText(message, 0, 20, 500 - ((GetPlayers().size - 1) * 22), 1000, (1, 1, 1));
-    self thread iPrintMessageDestroy(self.PrintMessageInt);
-
-    self.PrintMessageInt++;
-}
-
-function iPrintMessageDestroy(index)
-{
-    self endon("PrintDeleted" + index);
-
-    wait 5;
-
-    if(IsDefined(self.PrintMessageQueue[index]))
-        self CloseLUIMenu(self.PrintMessageQueue[index]);
-    
-    self.PrintMessageQueue[index] = undefined;
-}
-
-function GetTextWidth3arc(player, widthScale)
-{
-    if(!IsDefined(self.text) || self.text == "")
-        return 1;
-
-    hasButtons = IsSubStr(self.text, "[{");
-    fixme = "}]";
-
-    if(!IsDefined(widthScale))
-    {
-        if(hasButtons)
-        {
-            widthScale = 7;
-
-            if(IsDefined(player) && IsPlayer(player) && player GamePadUsedLast())
-                widthScale = 6;
-        }
-        else
-        {
-            widthScale = 5;
-        }
-    }
-
-    widthScale = self GetHudScaleWidth(widthScale);
-    nlToks = StrTok(self.text, "\n");
-    longest = 0;
-    longestSize = 0;
-
-    for(a = 0; a < nlToks.size; a++)
-    {
-        stripped = StripStringButtons(nlToks[a]);
-
-        if(stripped.size >= longestSize)
-        {
-            longest = a;
-            longestSize = stripped.size;
-        }
-    }
-
-    strng = StripStringButtons(nlToks[longest]);
-    buttonCount = CountButtonCodes(nlToks[longest]);
-    width = 1;
-
-    for(a = 0; a < strng.size; a++)
-        width += GetHUDCharWidth(strng[a], widthScale);
-
-    if(buttonCount)
-        width += Int(widthScale * 1.5) * buttonCount;
-
-    if(width <= 0)
-        return widthScale;
-
-    return width;
-}
-
-function GetHUDCharWidth(ch, widthScale)
-{
-    if(IsSmallChar(ch))
-        return 0;
-
-    if(isInArray(Array("/", ":", "-", "&", "|", " "), ch))
-        return Int(widthScale * 0.6);
-
-    return widthScale;
-}
-
-function GetHudScaleWidth(scale)
-{
-    if(self.fontscale <= 1.1)
-        return scale;
-
-    extra = Int((self.fontscale - 1.1) * 10 + 0.0001);
-    return scale + Int(extra / 2);
-}
-
-function CountButtonCodes(str)
-{
-    count = 0;
-
-    if(!IsDefined(str) || str == "")
-        return count;
-
-    for(a = 0; a < (str.size - 1); a++)
-    {
-        if(str[a] == "[" && str[(a + 1)] == "{")
-            count++;
-    }
-
-    fixme = "}]";
-
-    return count;
-}
-
-function StripStringButtons(str)
-{
-    if(!IsDefined(str) || str == "")
-        return "";
-
-    newString = "";
-
-    for(a = 0; a < str.size; a++)
-    {
-        if(a < (str.size - 1) && str[a] == "[" && str[(a + 1)] == "{")
-        {
-            for(b = (a + 2); b < str.size; b++)
-            {
-                if(b < (str.size - 1) && str[b] == "}" && str[(b + 1)] == "]")
-                {
-                    a = (b + 1);
-                    break;
-                }
-            }
-
-            if(a >= str.size)
-                break;
-
-            continue;
-        }
-
-        if(a < (str.size - 1) && IsCodeChars(str[a] + str[(a + 1)]))
-        {
-            a++;
-            continue;
-        }
-
-        if(IsSmallChar(str[a]))
-            continue;
-
-        newString += str[a];
-    }
-
-    return newString;
-}
-
-function IsCodeChars(chars)
-{
-    return isInArray(Array("^A", "^B", "^F", "^H", "^I", "^0", "^1", "^2", "^3", "^4", "^5", "^6", "^7", "^8", "^9"), chars);
-}
-
-function IsSmallChar(char)
-{
-    return isInArray(Array("[", "]", ".", ",", "'", "!", "{", "}", "|"), char);
-}
-
-function CorrectNL_BGHeight(str)
-{
-    if(!IsDefined(str))
-        return;
-    
-    if(!IsSubStr(str, "\n"))
-        return 12;
-
-    multiplier = 0;
-    toks = StrTok(str, "\n");
-
-    if(IsDefined(toks) && toks.size)
-    {
-        for(a = 0; a < toks.size; a++)
-            multiplier++;
-    }
-
-    return 3 + (14 * multiplier);
-}
-
-//Decided to remake GetDvarVector
-function GetDvarVector1(vecVar)
-{
-    dvar = "";
-    vecVar = GetDvarString(vecVar);
-
-    if(!IsDefined(vecVar) || vecVar == "")
-        return (0, 0, 0);
-
-    for(a = 0; a < vecVar.size; a++)
-    {
-        if(vecVar[a] != "(" && vecVar[a] != " " && vecVar[a] != ")")
-            dvar += vecVar[a];
-    }
-    
-    vals = [];
-    toks = StrTok(dvar, ",");
-    
-    for(a = 0; a < toks.size; a++)
-        vals[a] = Float(toks[a]);
-    
-    if(vals.size < 3)
-        return (0, 0, 0);
-    
-    return (vals[0], vals[1], vals[2]);
-}
-
-function PlayerScoreIndex(index)
-{
-    self.PlayerScoreIndex = (index - 1);
-    self RefreshMenu(self getCurrent(), self getCursor());
-}
-
-function PlayerScoreColor(color, index = 1)
-{
-    if(!IsDefined(color) || !IsVec(color))
-        color = (1, 1, 1);
-    
-    SetDvar("scoreColor" + index, "" + color);
-    
-    color = GetColorVec(color);
-    SetDvar("cg_scorescolor_gamertag_" + index, color[0] + " " + color[1] + " " + color[2] + " 1");
-    self RefreshMenu(self getCurrent(), self getCursor());
-
-    self iPrintlnBold("^1" + ToUpper(GetMenuName()) + ": ^7Score Color Will Update At The Start Of Your Next Match");
-}
-
-function FieldOfViewScale(scale)
-{
-    SetDvar("cg_fov", scale);
-}
-
-function FieldOfView(value)
-{
-    SetDvar("cg_fov_default", value);
-}
-
-function ShowOrigin()
-{
-    self.ShowOrigin = BoolVar(self.ShowOrigin);
-
-    if(Is_True(self.ShowOrigin))
-    {
-        self endon("disconnect");
-
-        //each value in the players origin vector(x, y, z) needs to be its own element to avoid creating a massive amount of unique strings
-        //SetValue(int / float) doesn't count towards unique strings since they're numbers
-        
-        self.originHud = [];
-
-        for(a = 0; a < 3; a++)
-            self.originHud[self.originHud.size] = self createText("default", 1, 1, 0, "CENTER", "CENTER", 0, 75 + (a * 16), 1, (1, 1, 1));
-
-        while(Is_True(self.ShowOrigin))
-        {
-            for(a = 0; a < self.originHud.size; a++)
-            {
-                if(IsDefined(self.originHud[a]))
-                    self.originHud[a] SetValue(self.origin[a]);
-            }
-            
-            wait 0.01;
-        }
-    }
-    else
-    {
-        if(IsDefined(self.originHud) && self.originHud.size)
-        {
-            for(a = 0; a < self.originHud.size; a++)
-            {
-                if(IsDefined(self.originHud[a]))
-                    self.originHud[a] DestroyHud();
-            }
-        }
-    }
-}
-
-function Is_True(boolVar)
-{
-    if(!IsDefined(boolVar) || !boolVar)
-        return false;
-    
-    return true;
-}
-
-function BoolVar(variable)
-{
-    if(Is_True(variable))
-        return undefined;
-    
-    return true;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//advanced_scripts.gsc
 function PopulateAdvancedScripts(menu)
 {
     switch(menu)
@@ -6621,7 +616,7 @@ function PopulateAdvancedScripts(menu)
                             if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(weaps[a])))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
                             {
                                 strn = ((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name);
-                                
+                                    
                                 if(!IsInArray(arr, strn))
                                 {
                                     arr[arr.size] = strn;
@@ -6777,7 +772,7 @@ function ControllableZombie(team)
         self SetPlayerAngles(zombie.angles);
         
         zombie.ignore_find_flesh = 1;
-        zombie.team = (((team == "Friendly") ? self.team : level.zombie_team));
+        zombie.team = ((team == "Friendly") ? self.team : level.zombie_team);
         zombie thread zombie_utility::set_zombie_run_cycle("sprint");
 
         while(!CanControl(zombie) && IsAlive(zombie))
@@ -6966,7 +961,7 @@ function AC130(type)
         {
             if(!IsDefined(self.AC130Reloading))
             {
-                self.AC130Reloading = self createText("default", 1.4, 1, "RELOADING...", "CENTER", "CENTER", 0, 100, 1, (1, 1, 1));
+                self.AC130Reloading = self createText("objective", 1.4, 1, "RELOADING...", "CENTER", 320, 340, 1, (1, 1, 1));
                 self.AC130Reloading thread AC130FlashingHud();
             }
         }
@@ -7033,13 +1028,13 @@ function AC130FlashingHud()
 
 function AC130NextWeapon(current)
 {
-    weapon40MM = ((IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon)));
+    weapon40MM = (IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon));
     return ((current == GetWeapon("minigun")) ? weapon40MM : ((current == weapon40MM) ? GetWeapon("hunter_rocket_turret_player") : GetWeapon("minigun")));
 }
 
 function AC130FireRate(ammo)
 {
-    weapon40MM = ((IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon)));
+    weapon40MM = (IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon));
     return ((ammo == GetWeapon("minigun")) ? 0.01 : ((ammo == weapon40MM) ? 1 : 5));
 }
 
@@ -7053,7 +1048,7 @@ function FireAC130(ammoType)
     self.AC130DisableFire[ammoType] = true;
 
     fire_origin = self GetTagOrigin("j_neck") + (AnglesToForward(self GetPlayerAngles()) * 5) + (AnglesToRight(self GetPlayerAngles()) * -5);
-    weapon40MM = ((IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon)));
+    weapon40MM = (IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon));
 
     if(ammoType == GetWeapon("hunter_rocket_turret_player"))
     {
@@ -7090,15 +1085,15 @@ function RefreshAC130HUD(ammo)
 
     self.AC130HUD = [];
 
-    weapon40MM = ((IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon)));
-    AC130HudValues = ((ammo == GetWeapon("minigun")) ? Array("0,50,2,80", "40,0,60,2", "-40,0,60,2", "-180,151,2,50", "-155,175,50,2", "180,151,2,50", "155,175,50,2", "180,-151,2,50", "155,-175,50,2", "-180,-151,2,50", "-155,-175,50,2") : ((ammo == weapon40MM) ? Array("0,80,2,120", "0,-80,2,120", "0,-46,10,1", "0,-92,10,1", "0,-140,14,1", "0,46,10,1", "0,92,10,1", "0,140,14,1", "85,0,130,2", "-85,0,130,2", "37,0,1,10", "75,0,1,10", "112,0,1,10", "150,0,1,14", "-37,0,1,10", "-75,0,1,10", "-112,0,1,10", "-150,0,1,14") : Array("0,25,51,2", "0,-25,51,2", "25,0,2,51", "-25,0,2,52", "0,50,2,51", "0,-50,2,51", "50,0,51,2", "-50,0,51,2", "225,161,2,30", "210,175,30,2", "-225,161,2,30", "-210,175,30,2", "-225,-161,2,30", "-210,-175,30,2", "225,-161,2,30", "210,-175,30,2")));
-    text = (((ammo == GetWeapon("minigun")) ? "25mm" : ((ammo == weapon40MM) ? "40mm" : "105mm")));
+    weapon40MM = (IsVerkoMap() ? GetWeapon("vk_tra_pis_t9_1911_rdw_lvl3") : zm_weapons::get_upgrade_weapon(level.start_weapon));
+    AC130HudValues = ((ammo == GetWeapon("minigun")) ? Array("320,290,2,80", "360,240,60,2", "280,240,60,2", "140,391,2,50", "165,415,50,2", "500,391,2,50", "475,415,50,2", "500,89,2,50", "475,65,50,2", "140,89,2,50", "165,65,50,2") : ((ammo == weapon40MM) ? Array("320,320,2,120", "320,160,2,120", "320,194,10,1", "320,148,10,1", "320,100,14,1", "320,286,10,1", "320,332,10,1", "320,380,14,1", "405,240,130,2", "235,240,130,2", "357,240,1,10", "395,240,1,10", "432,240,1,10", "470,240,1,14", "283,240,1,10", "245,240,1,10", "208,240,1,10", "170,240,1,14") : Array("320,265,51,2", "320,215,51,2", "345,240,2,51", "295,240,2,52", "320,290,2,51", "320,190,2,51", "370,240,51,2", "270,240,51,2", "545,401,2,30", "530,415,30,2", "95,401,2,30", "110,415,30,2", "95,79,2,30", "110,65,30,2", "545,79,2,30", "530,65,30,2")));
+    text = ((ammo == GetWeapon("minigun")) ? "25mm" : ((ammo == weapon40MM) ? "40mm" : "105mm"));
 
     for(a = 0; a < AC130HudValues.size; a++)
-        self.AC130HUD[self.AC130HUD.size] = self createRectangle("CENTER", "CENTER", Int(StrTok(AC130HudValues[a], ",")[0]), Int(StrTok(AC130HudValues[a], ",")[1]), Int(StrTok(AC130HudValues[a], ",")[2]), Int(StrTok(AC130HudValues[a], ",")[3]), (1, 1, 1), 1, 1, "white");
+        self.AC130HUD[self.AC130HUD.size] = self createRectangle("CENTER", Int(StrTok(AC130HudValues[a], ",")[0]), Int(StrTok(AC130HudValues[a], ",")[1]), Int(StrTok(AC130HudValues[a], ",")[2]), Int(StrTok(AC130HudValues[a], ",")[3]), (1, 1, 1), 1, 1, "white");
     
-    button = ((self GamepadUsedLast() ? "[{+weapnext_inventory}]" : "[{+activate}]"));
-    self.AC130HUD[self.AC130HUD.size] = self createText("default", 1.2, 1, text + "\n^3" + button + " ^7To Change Weapon", "LEFT", "CENTER", -400, 0, 1, (1, 1, 1));
+    button = (self GamepadUsedLast() ? "[{+weapnext_inventory}]" : "[{+activate}]");
+    self.AC130HUD[self.AC130HUD.size] = self createText("objective", 1.2, 1, text + "\n^3" + button + " ^7To Change Weapon", "LEFT", -80, 240, 1, (1, 1, 1));
 }
 
 function FlyableUFO()
@@ -7185,7 +1180,7 @@ function FlyableUFO()
         playerLinker.angles = (playerLinker.angles[0], self GetPlayerAngles()[1], playerLinker.angles[2]);
 
         if(self AttackButtonPressed())
-            self thread UFOShoot((base[0].origin + (AnglesToUp(base[0].angles) * -10)), base[0].origin, 350, true, base[0]);
+            self thread UFOShoot((base[0].origin + (AnglesToUp(base[0].angles) * -10)), base[0].origin, 350, 0.35, true, base[0]);
 
         if(self AdsButtonPressed())
             playerLinker.origin = playerLinker.origin + AnglesToForward(playerLinker.angles) * 25;
@@ -7257,7 +1252,7 @@ function UFOSpin()
     }
 }
 
-function UFOShoot(startOrigin, endOrigin, range = 350, runTrace = false, ignoreEnt)
+function UFOShoot(startOrigin, endOrigin, range = 350, moveTime = 0.35, runTrace = false, ignoreEnt)
 {
     if(Is_True(self.UFOShoot) || !IsDefined(startOrigin) || !IsVec(startOrigin) || !IsDefined(endOrigin) || !IsVec(endOrigin))
         return;
@@ -7288,7 +1283,7 @@ function UFOShoot(startOrigin, endOrigin, range = 350, runTrace = false, ignoreE
         if(IsDefined(level._effect["tesla_bolt"]))
             PlayFXOnTag(level._effect["tesla_bolt"], bullet, "tag_origin");
 
-        time = 0.35;
+        time = moveTime;
         bullet MoveTo(endOrigin, time);
         wait (time / 2);
 
@@ -7299,7 +1294,7 @@ function UFOShoot(startOrigin, endOrigin, range = 350, runTrace = false, ignoreE
             bullet Delete();
         
         Earthquake(0.75, 2, endOrigin, 255);
-        RadiusDamage(endOrigin, 350, 699, 699, self);
+        RadiusDamage(endOrigin, range, 696969, 696969, self);
 
         if(IsDefined(level._effect["raps_impact"]))
             PlayFX(level._effect["raps_impact"], endOrigin);
@@ -7402,14 +1397,14 @@ function OpenCloseMoonDoors()
 
 function SetMoonDoorState(door, open)
 {
-    time = ((IsDefined(self.script_transition_time) ? self.script_transition_time : 1));
-    scale = ((open ? 1 : -1));
+    time = (IsDefined(self.script_transition_time) ? self.script_transition_time : 1);
+    scale = (open ? 1 : -1);
     door.has_been_opened = open;
     
     switch(self.script_string)
     {
         case "rotate":
-            angles = ((open ? self.script_angles : self.savedAngles));
+            angles = (open ? self.script_angles : self.savedAngles);
 
             if(IsDefined(angles))
             {
@@ -7424,7 +1419,7 @@ function SetMoonDoorState(door, open)
             if(IsDefined(self.script_vector))
             {
                 vector = VectorScale(self.script_vector, scale);
-                goalOrigin = ((open ? (self.origin + vector) : self.savedOrigin));
+                goalOrigin = (open ? (self.origin + vector) : self.savedOrigin);
 
                 if(time >= 0.5)
                     self MoveTo(goalOrigin, time, (time * 0.25), (time * 0.25));
@@ -7439,7 +1434,7 @@ function SetMoonDoorState(door, open)
         case "move":
             if(IsDefined(self.script_vector))
             {
-                goalOrigin = ((open ? (self.origin + VectorScale(self.script_vector, scale)) : self.savedOrigin));
+                goalOrigin = (open ? (self.origin + VectorScale(self.script_vector, scale)) : self.savedOrigin);
                 
                 if(IsDefined(goalOrigin))
                 {
@@ -7488,12 +1483,11 @@ function BodyGuard()
     
     if(Is_True(self.BodyGuard))
     {
-        spawner = ArrayGetClosest(level.zombie_spawners, self.origin);
         self.BodyGuardZombie = self ServerSpawnZombie(self.origin);
         wait 0.1;
         
         if(Is_True(self.BodyGuard) && IsDefined(self.BodyGuardZombie) && IsAlive(self.BodyGuardZombie))
-        {            
+        {
             self.BodyGuardZombie.ignoreme = 1;
             self.BodyGuardZombie.team = self.team;
             self.BodyGuardZombie.no_gib = 1;
@@ -7515,7 +1509,7 @@ function BodyGuard()
                     self.BodyGuardZombie ClearForcedGoal();
 
                     goalPos = (self.origin + VectorScale(AnglesToForward(self GetPlayerAngles()), 100));
-                    speed = (((Distance(goalPos, self.BodyGuardZombie.origin) > 200) ? "super_sprint" : "walk"));
+                    speed = ((Distance(goalPos, self.BodyGuardZombie.origin) > 200) ? "super_sprint" : "walk");
 
                     if(IsDefined(self.BodyGuardZombie.zombie_move_speed) && self.BodyGuardZombie.zombie_move_speed != speed)
                         self.BodyGuardZombie thread zombie_utility::set_zombie_run_cycle(speed);
@@ -7627,13 +1621,7 @@ function ArtilleryStrike()
     
     while(1)
     {
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
-        
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
         origin = trace["position"];
         surface = trace["surfacetype"];
 
@@ -7698,38 +1686,10 @@ function ArtilleryStrike()
         self.ArtilleryStrike = BoolVar(self.ArtilleryStrike);
 }
 
+// ============================================================
+// Functions/aimbot.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//aimbot.gsc
 function PopulateAimbotMenu(menu, player)
 {
     switch(menu)
@@ -7936,18 +1896,13 @@ function IsVisible(enemy, tag)
     {
         test = enemy GetTagOrigin("tag_body");
         
-        if(!IsDefined(test) || IsVec(test))
+        if(!IsDefined(test) || !IsVec(test))
             return false;
         
         tag = test;
     }
 
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-
-    return VectorDot(AnglesToForward(self GetTagAngles("tag_weapon_right")), VectorNormalize(tag - start)) > Cos(40) && BulletTracePassed(self GetEye(), tag, false, self);
+    return VectorDot(AnglesToForward(self GetTagAngles("tag_weapon_right")), VectorNormalize(tag - self GetEye())) > Cos(40) && BulletTracePassed(self GetEye(), tag, false, self);
 }
 
 function isFiring1()
@@ -8036,69 +1991,10 @@ function AimbotOptions(a, player)
     }
 }
 
+// ============================================================
+// Functions/aispawner.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//aispawner.gsc
 function AISpawnLocation(location)
 {
     self.AISpawnLocation = location;
@@ -8140,7 +2036,7 @@ function ServerSpawnZombie(target)
     if(!IsDefined(level.zombie_spawners))
         return;
 
-    spawner = ((IsDefined(level.fn_custom_zombie_spawner_selection) ? [[ level.fn_custom_zombie_spawner_selection ]]() : ((Is_True(level.use_multiple_spawns) ? (((IsDefined(level.spawner_int) && (IsDefined(level.zombie_spawn[level.spawner_int].size) && level.zombie_spawn[level.spawner_int].size)) ? array::random(level.zombie_spawn[level.spawner_int]) : array::random(level.zombie_spawners))) : array::random(level.zombie_spawners)))));
+    spawner = (IsDefined(level.fn_custom_zombie_spawner_selection) ? [[ level.fn_custom_zombie_spawner_selection ]]() : (Is_True(level.use_multiple_spawns) ? ((IsDefined(level.spawner_int) && (IsDefined(level.zombie_spawn[level.spawner_int].size) && level.zombie_spawn[level.spawner_int].size)) ? array::random(level.zombie_spawn[level.spawner_int]) : array::random(level.zombie_spawners)) : array::random(level.zombie_spawners)));
     zombie = zombie_utility::spawn_zombie(spawner);
 
     if(IsDefined(zombie) && IsDefined(target) && IsVec(target))
@@ -8177,7 +2073,7 @@ function ServerSpawnZombie(target)
 function ServerSpawnDog(location)
 {
     favorite_enemy = dogs_get_favorite_enemy();
-    spawn_loc = ((IsDefined(level.dog_spawn_func) ? [[ level.dog_spawn_func ]](level.dog_spawners, favorite_enemy) : dog_spawn_factory_logic(favorite_enemy)));
+    spawn_loc = (IsDefined(level.dog_spawn_func) ? [[ level.dog_spawn_func ]](level.dog_spawners, favorite_enemy) : dog_spawn_factory_logic(favorite_enemy));
     ai = zombie_utility::spawn_zombie(level.dog_spawners[0]);
 
     if(IsDefined(ai))
@@ -8219,7 +2115,7 @@ function dog_spawn_fx(ai, ent, location)
 {
     ai endon("death");
 
-    target = (((IsDefined(location) && IsVec(location)) ? location : ent.origin));
+    target = ((IsDefined(location) && IsVec(location)) ? location : ent.origin);
     ai SetFreeCameraLockOnAllowed(0);
     PlayFX(level._effect["lightning_dog_spawn"], target);
     PlaySoundAtPosition("zmb_hellhound_prespawn", target);
@@ -8229,7 +2125,7 @@ function dog_spawn_fx(ai, ent, location)
     Earthquake(0.5, 0.75, target, 1000);
     PlaySoundAtPosition("zmb_hellhound_spawn", target);
 
-    angles = ((IsDefined(ai.favoriteenemy) ? (ai.angles[0], VectorToAngles(ai.favoriteenemy.origin - target)[1], ai.angles[2]) : ent.angles));
+    angles = (IsDefined(ai.favoriteenemy) ? (ai.angles[0], VectorToAngles(ai.favoriteenemy.origin - target)[1], ai.angles[2]) : ent.angles);
 
     ai ForceTeleport(target, angles);
     ai zombie_setup_attack_properties_dog();
@@ -8310,12 +2206,7 @@ function dog_spawn_factory_logic(favorite_enemy)
 //Margwa
 function ServerSpawnMargwa()
 {
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-    
-    trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+    trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
 
     origin = trace["position"];
     surface = trace["surfacetype"];
@@ -8323,7 +2214,7 @@ function ServerSpawnMargwa()
     if(surface == "none" || surface == "default")
         return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
 
-    s_location = (((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin));
+    s_location = ((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin);
 
     if(!IsDefined(level.var_b398aafa) || !IsArray(level.var_b398aafa))
         return;
@@ -8422,7 +2313,7 @@ function ServerSpawnWasp()
     }
 
     //SOE and Revelations have different wasp spawner variables
-    spawner = ((IsDefined(level.var_c200ab6) ? level.var_c200ab6[0] : level.wasp_spawners[0]));
+    spawner = (IsDefined(level.var_c200ab6) ? level.var_c200ab6[0] : level.wasp_spawners[0]);
 
     ai = zombie_utility::spawn_zombie(spawner);
     v_spawn_origin = spawn_point.origin;
@@ -8564,7 +2455,7 @@ function wasp_spawn_init(ai, origin, should_spawn_fx)
     ai endon("death");
 
     ai SetInvisibleToAll();
-    v_origin = ((IsDefined(origin) ? origin : ai.origin));
+    v_origin = (IsDefined(origin) ? origin : ai.origin);
 
     if(should_spawn_fx)
         PlayFX(level._effect["lightning_wasp_spawn"], v_origin);
@@ -8572,7 +2463,7 @@ function wasp_spawn_init(ai, origin, should_spawn_fx)
     wait 1.5;
     Earthquake(0.3, 0.5, v_origin, 256);
 
-    angle = ((IsDefined(ai.favoriteenemy) ? VectorToAngles(ai.favoriteenemy.origin - v_origin) : ai.angles));
+    angle = (IsDefined(ai.favoriteenemy) ? VectorToAngles(ai.favoriteenemy.origin - v_origin) : ai.angles);
     angles = (ai.angles[0], angle[1], ai.angles[2]);
 
     ai.origin = v_origin;
@@ -8613,8 +2504,6 @@ function wasp_behind_audio()
 
     while(1)
     {
-        players = GetPlayers();
-
         foreach(player in GetPlayers())
         {
             if(IsAlive(player) && !IsDefined(player.revivetrigger))
@@ -8646,12 +2535,7 @@ function function_7085a2e4(einflictor, eattacker, idamage, idflags, smeansofdeat
 //Civil Protector
 function ServerSpawnCivilProtector()
 {
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-    
-    trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+    trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
 
     origin = trace["position"];
     surface = trace["surfacetype"];
@@ -8659,11 +2543,11 @@ function ServerSpawnCivilProtector()
     if(surface == "none" || surface == "default")
         return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
 
-    v_ground_position = (((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin));
+    v_ground_position = ((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin);
     var_36e9b69a = v_ground_position + VectorScale((0, 0, 1), 650);
     level thread function_70541dc1(v_ground_position);
 
-    spawner = ((level flag::get("ee_complete") ? level.var_c1b7d765[0] : level.zombie_robot_spawners[0]));
+    spawner = (level flag::get("ee_complete") ? level.var_c1b7d765[0] : level.zombie_robot_spawners[0]);
     level.ai_robot = spawner SpawnFromSpawner("companion_spawner", 1);
     level.ai_robot.maxhealth = level.ai_robot.health;
     level.ai_robot.allow_zombie_to_target_ai = 0;
@@ -8765,7 +2649,7 @@ function robot_sky_trail()
 
 function function_fa1df614(v_origin, eattacker, n_radius)
 {
-    team = ((IsDefined(level.zombie_team) ? level.zombie_team : "axis"));
+    team = (IsDefined(level.zombie_team) ? level.zombie_team : "axis");
     a_ai_zombies = array::get_all_closest(v_origin, GetAITeamArray(team), undefined, undefined, n_radius);
 
     foreach(ai_zombie in a_ai_zombies)
@@ -9108,12 +2992,7 @@ function ServerSpawnMechz(pos)
 {
     if(!IsDefined(pos))
     {
-        start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-    
-    trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
 
         origin = trace["position"];
         surface = trace["surfacetype"];
@@ -9121,7 +3000,7 @@ function ServerSpawnMechz(pos)
         if(surface == "none" || surface == "default")
             return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
 
-        s_location = (((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin));
+        s_location = ((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin);
     }
     else
         s_location = pos;
@@ -9282,7 +3161,7 @@ function function_3efae612(zombie)
         if(dot > 0)
         {
             zombie.knockdown_direction = "right";
-            zombie.getup_direction = ((math::cointoss() ? "getup_back" : "getup_belly"));
+            zombie.getup_direction = (math::cointoss() ? "getup_back" : "getup_belly");
         }
         else
         {
@@ -9515,12 +3394,7 @@ function function_bb048b27()
 //Sentinel Drone
 function ServerSpawnSentinelDrone()
 {
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
-    
-    trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+    trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
 
     origin = trace["position"];
     surface = trace["surfacetype"];
@@ -9528,7 +3402,7 @@ function ServerSpawnSentinelDrone()
     if(surface == "none" || surface == "default")
         return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
 
-    s_location = (((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin));
+    s_location = ((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin);
     s_location += (0, 0, 25);
     ai = function_fded8158(level.var_fda4b3f3[0]);
 
@@ -9916,7 +3790,7 @@ function sentinel_getnextmovepositiontactical(b_do_not_chase_enemy)
     self endon("change_state");
     self endon("death");
 
-    selfdisttotarget = ((IsDefined(self.sentinel_droneenemy) ? Distance2D(self.origin, self.sentinel_droneenemy.origin) : 0));
+    selfdisttotarget = (IsDefined(self.sentinel_droneenemy) ? Distance2D(self.origin, self.sentinel_droneenemy.origin) : 0);
     gooddist = 0.5 * sentinel_getengagementdistmin() + sentinel_getengagementdistmax();
     closedist = 1.2 * gooddist;
     fardist = 3 * gooddist;
@@ -10021,13 +3895,13 @@ function sentinel_getnextmovepositiontactical(b_do_not_chase_enemy)
         {
             best_score = point.score;
             best_point = point;
-            best_point.visibile = ((IsDefined(self.sentinel_droneenemy) ? Int(BulletTracePassed(point.origin, enemy_origin, 0, self, self.sentinel_droneenemy)) : Int(BulletTracePassed(point.origin, enemy_origin, 0, self))));
+            best_point.visibile = (IsDefined(self.sentinel_droneenemy) ? Int(BulletTracePassed(point.origin, enemy_origin, 0, self, self.sentinel_droneenemy)) : Int(BulletTracePassed(point.origin, enemy_origin, 0, self)));
             continue;
         }
 
         if(point.score > best_score)
         {
-            point.visibile = ((IsDefined(self.sentinel_droneenemy) ? Int(BulletTracePassed(point.origin, enemy_origin, 0, self, self.sentinel_droneenemy)) : Int(BulletTracePassed(point.origin, enemy_origin, 0, self))));
+            point.visibile = (IsDefined(self.sentinel_droneenemy) ? Int(BulletTracePassed(point.origin, enemy_origin, 0, self, self.sentinel_droneenemy)) : Int(BulletTracePassed(point.origin, enemy_origin, 0, self)));
 
             if(point.visibile >= best_point.visibile)
             {
@@ -10044,7 +3918,7 @@ function sentinel_getnextmovepositiontactical(b_do_not_chase_enemy)
     }
 
     returndata = [];
-    returndata["origin"] = ((IsDefined(best_point) ? best_point.origin : undefined));
+    returndata["origin"] = (IsDefined(best_point) ? best_point.origin : undefined);
     returndata["centerOnNav"] = queryresult.centeronnav;
 
     return returndata;
@@ -10260,13 +4134,8 @@ function ServerSpawnMangler()
 
     if(!IsDefined(var_19764360))
         return;
-
-    start = self GetWeaponMuzzlePoint();
-
-    if(!IsDefined(start) || !IsVec(start))
-        start = self GetEye();
     
-    trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+    trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
 
     origin = trace["position"];
     surface = trace["surfacetype"];
@@ -10274,7 +4143,7 @@ function ServerSpawnMangler()
     if(surface == "none" || surface == "default")
         return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
 
-    s_location = (((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin));
+    s_location = ((self.AISpawnLocation == "Crosshairs") ? self TraceBullet() : self.origin);
     ai = function_665a13cd(level.var_6bca5baa[0]);
 
     if(IsDefined(ai))
@@ -10548,7 +4417,7 @@ function function_7ba80ea7()
     if(!IsDefined(zombiehealth))
         zombiehealth = level.zombie_vars["zombie_health_start"];
 
-    self.maxhealth = (((level.round_number <= 20) ? (zombiehealth * 1.2) : ((level.round_number <= 50) ? (zombiehealth * 1.5) : (zombiehealth * 1.7))));
+    self.maxhealth = ((level.round_number <= 20) ? (zombiehealth * 1.2) : ((level.round_number <= 50) ? (zombiehealth * 1.5) : (zombiehealth * 1.7)));
 
     if(!IsDefined(self.maxhealth) || self.maxhealth <= 0 || self.maxhealth > 2147483647 || self.maxhealth != self.maxhealth)
         self.maxhealth = zombiehealth;
@@ -10591,7 +4460,7 @@ function function_1be68e3f()
 //Quad Zombie(Nova Gas Zombie)
 function ServerSpawnNovaZombie(location)
 {
-    spawn_array = ((IsDefined(level.quad_spawners) ? level.quad_spawners : GetEntArray("quad_zombie_spawner", "script_noteworthy")));
+    spawn_array = (IsDefined(level.quad_spawners) ? level.quad_spawners : GetEntArray("quad_zombie_spawner", "script_noteworthy"));
     spawn_point = spawn_array[RandomInt(spawn_array.size)];
     ai = zombie_utility::spawn_zombie(spawn_point);
 
@@ -10742,61 +4611,10 @@ function quad_trail()
     zm_net::network_safe_play_fx_on_tag("quad_fx", 2, level._effect["quad_trail"], self.fx_quad_trail, "tag_origin");
 }
 
+// ============================================================
+// Functions/allplayers.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//allplayers.gsc
 function PopulateAllPlayerOptions(menu)
 {
     switch(menu)
@@ -10839,6 +4657,7 @@ function PopulateAllPlayerOptions(menu)
             self addMenu("Malicious Options");
                 self addOpt("Launch", &AllPlayersFunction, &LaunchPlayer);
                 self addOpt("Mortar Strike", &AllPlayersFunction, &MortarStrikePlayer);
+                self addOpt("Fake Derank", &AllPlayersFunction, &FakeDerank);
                 self addOpt("Fake Damage", &AllPlayersFunction, &FakeDamagePlayer);
                 self addOpt("Crash Game", &AllPlayersFunction, &CrashPlayer);
             break;
@@ -10857,7 +4676,7 @@ function AllPlayersFunction(fnc, param, param2)
         
         if(IsDefined(param2))
             self thread [[ fnc ]](param, param2, player);
-        else if(!IsDefined(param2) && IsDefined(param))
+        else if(IsDefined(param))
             self thread [[ fnc ]](param, player);
         else
             self thread [[ fnc ]](player);
@@ -10939,66 +4758,10 @@ function MessageAllPlayers(msg)
     }
 }
 
+// ============================================================
+// Functions/basic.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//basic.gsc
 function PopulateBasicScripts(menu, player)
 {
     switch(menu)
@@ -11025,7 +4788,7 @@ function PopulateBasicScripts(menu, player)
                 self addOptBool(player.MultiJump, "Multi-Jump", &MultiJump, player);
                 self addOptBool(player.DisablePlayerHUD, "Disable HUD", &DisablePlayerHUD, player);
                 self addOpt("Visual Effects", &newMenu, "Visual Effects");
-                self addOptSlider("Set Vision", &PlayerSetVision, Array("Default", "zombie_last_stand", "zombie_death"), player);
+                self addOptSlider("Set Vision", &PlayerSetVision, Array("Default", "zombie_last_stand", "zombie_death", "flashbang", "zm_bgb_candy_bluez", "zm_bgb_candy_greenz", "zm_bgb_candy_purplez", "zm_bgb_candy_yellowz", "zm_bgb_now_you_see_me", "zombie_noire"), player);
                 self addOptSlider("Zombie Charms", &ZombieCharms, Array("None", "Orange", "Green", "Purple", "Blue"), player);
                 self addOptSlider("Custom Crosshairs", &CustomCrosshairs, Array("Disable", "+", "@", "x", "o", "> <", "CF4_99", "Extinct", "Daltax", "GBP", "AOC", GetMenuName(), "discord.gg/apparitionbo3", CleanName(player getName())), player);
                 self addOptBool(player.NoExplosiveDamage, "No Explosive Damage", &NoExplosiveDamage, player);
@@ -11052,8 +4815,7 @@ function PopulateBasicScripts(menu, player)
                     self addOptBool((IsDefined(player.perks_active) && player.perks_active.size == MenuPerks.size), "All Perks", &PlayerAllPerks, player);
                     self addOptBool(player._retain_perks, "Retain Perks", &PlayerRetainPerks, player);
 
-                    for(a = 0; a < MenuPerks.size; a++)
-                        self addOptBool((player HasPerk(MenuPerks[a]) || player zm_perks::has_perk_paused(MenuPerks[a])), ((ReturnPerkName(CleanString(MenuPerks[a])) == "Unknown Perk") ? CleanString(MenuPerks[a]) : ReturnPerkName(CleanString(MenuPerks[a]))), &GivePlayerPerk, MenuPerks[a], player);
+                    for(a = 0; a < MenuPerks.size; a++) self addOptBool((player HasPerk(MenuPerks[a]) || player zm_perks::has_perk_paused(MenuPerks[a])), ((ReturnPerkName(CleanString(MenuPerks[a])) == "Unknown Perk") ? CleanString(MenuPerks[a]) : ReturnPerkName(CleanString(MenuPerks[a]))), &GivePlayerPerk, MenuPerks[a], player);
                 }
             break;
         
@@ -11153,7 +4915,6 @@ function Noclip1(player)
         player.nocliplinker = SpawnScriptModel(player.origin, "tag_origin");
         player PlayerLinkTo(player.nocliplinker, "tag_origin");
         player.DisableMenuControls = true;
-
         player SetMenuInstructions(Array("[{+attack}] - Move Forward", "[{+speed_throw}] - Move Backwards", "[{+melee}] - Exit"));
         
         while(Is_True(player.Noclip) && Is_Alive(player) && !player isPlayerLinked(player.nocliplinker))
@@ -11237,7 +4998,6 @@ function UFOMode(player)
         player.ufolinker = SpawnScriptModel(player.origin, "tag_origin");
         player PlayerLinkTo(player.ufolinker, "tag_origin");
         player.DisableMenuControls = true;
-
         player SetMenuInstructions(Array("[{+attack}] - Move Up", "[{+speed_throw}] - Move Down", "[{+frag}] - Move Forward", "[{+melee}] - Exit"));
         
         while(Is_True(player.UFOMode) && Is_Alive(player) && !player isPlayerLinked(player.ufolinker))
@@ -11449,7 +5209,7 @@ function GivePlayerGobblegum(name, player)
         menu = self getCurrent();
         curs = self getCursor();
 
-        if(SessionModeIsOnlineGame()) //Don't need to use the recreated if it's a ranked game
+        if(SessionModeIsOnlineGame()) //Don't need to use the recreated function if it's a ranked game
         {
             player bgb::bgb_gumball_anim(name, false);
 
@@ -11532,7 +5292,7 @@ function SetMovementSpeed(scale, player)
     player endon("EndMoveSpeed");
     player endon("disconnect");
     
-    player.MovementSpeed = (((scale == 1) ? undefined : scale));
+    player.MovementSpeed = ((scale == 1) ? undefined : scale);
     player SetMoveSpeedScale(scale);
     
     while(IsDefined(player.MovementSpeed) && player.MovementSpeed != 1)
@@ -11613,7 +5373,7 @@ function ReducedSpread(player)
 }
 
 function MultiJump(player)
-{    
+{
     player endon("disconnect");
 
     player.MultiJump = BoolVar(player.MultiJump);
@@ -11663,7 +5423,7 @@ function GetVisualType(effect)
         foreach(key in GetArrayKeys(level.vsmgr[types[a]].info))
         {
             if(IsDefined(key) && key == effect)
-                type = ((IsDefined(type) ? "Both" : types[a]));
+                type = (IsDefined(type) ? "Both" : types[a]);
         }
     }
 
@@ -11706,6 +5466,8 @@ function SetClientVisualEffects(effect, player)
     if(!IsDefined(type))
         return;
 
+    player notify("kill_full_period_hold");
+
     if(IsDefined(player.ClientVisualEffect))
     {
         if(effect == player.ClientVisualEffect)
@@ -11745,11 +5507,27 @@ function SetClientVisualEffects(effect, player)
         if(IsDefined(effect) && effect != "None")
         {
             if(type == "visionset" || type == "Both")
-                visionset_mgr::activate("visionset", effect, player);
-            
+                visionset_mgr::activate("visionset", effect, player, 1.25, &full_period_hold, 1);
+
             if(type == "overlay" || type == "Both")
-                visionset_mgr::activate("overlay", effect, player);
+            {
+                if(IsDefined(level.vsmgr["overlay"]) && IsDefined(level.vsmgr["overlay"].info) && IsDefined(level.vsmgr["overlay"].info[effect]) && IsDefined(level.vsmgr["overlay"].info[effect].state) && IsDefined(level.vsmgr["overlay"].info[effect].state.lerp_thread))
+                    lerp = level.vsmgr["overlay"].info[effect].state.lerp_thread;
+                
+                visionset_mgr::activate("overlay", effect, player, ((IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread_per_player || IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread) ? 1.25 : 1), ((IsDefined(lerp) && lerp == &visionset_mgr::duration_lerp_thread_per_player) ? 1 : ((IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread_per_player || IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread) ? &full_period_hold : undefined)), ((IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread_per_player || IsDefined(lerp) && lerp == &visionset_mgr::ramp_in_out_thread) ? 1 : undefined));
+            }
         }
+    }
+}
+
+function full_period_hold()
+{
+    self endon("disconnect");
+    self endon("kill_full_period_hold");
+
+    while(1)
+    {
+        wait 1;
     }
 }
 
@@ -11907,6 +5685,9 @@ function PlayerRevive(player)
 function PlayerDeath(type, player)
 {
     player endon("disconnect");
+
+    if(!Is_Alive(player))
+        return self iPrintlnBold("^1ERROR: ^7Player Isn't Alive");
     
     if(Is_True(player.playerGodmode))
         player Godmode(player);
@@ -11915,9 +5696,6 @@ function PlayerDeath(type, player)
         player DemiGod(player);
     
     player DisableInvulnerability(); //Just to ensure that the player is able to be damaged.
-
-    if(!Is_Alive(player))
-        return self iPrintlnBold("^1ERROR: ^7Player Isn't Alive");
     
     switch(type)
     {
@@ -11953,57 +5731,10 @@ function PlayerDeath(type, player)
     }
 }
 
+// ============================================================
+// Functions/bullet.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//bullet.gsc
 function PopulateBulletMenu(menu, player)
 {
     switch(menu)
@@ -12026,7 +5757,7 @@ function PopulateBulletMenu(menu, player)
                 player.ProjectileSpreadMultiplier = 1;
             
             self addMenu("Projectiles");
-                self addOptIncSlider("Projectile Multiplier", &ProjectileMultiplier, 1, 1, 5, 1, player);
+                self addOptIncSlider("Projectile Multiplier", &ProjectileMultiplier, 1, 1, 3, 1, player);
                 self addOptIncSlider("Spread Multiplier", &ProjectileSpreadMultiplier, 1, 1, 50, 1, player);
                 self addOpt("");
 
@@ -12047,7 +5778,7 @@ function PopulateBulletMenu(menu, player)
                         {
                             if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(weaps[a])))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
                             {
-                                strng = (((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name));
+                                strng = ((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name);
                                 
                                 if(!IsInArray(arr, strng))
                                 {
@@ -12269,59 +6000,10 @@ function ResetBullet(player)
         player.ExplosiveBullets = BoolVar(player.ExplosiveBullets);
 }
 
+// ============================================================
+// Functions/entity_options.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//entity_options.gsc
 function PopulateEntityOptions(menu)
 {
     switch(menu)
@@ -12329,7 +6011,7 @@ function PopulateEntityOptions(menu)
         case "Entity Options":
             self addMenu(menu);
                 
-                if(IsDefined(level.SavedMapEntities) && level.SavedMapEntities.size)
+                if(IsDefined(level.menu_entities) && level.menu_entities.size)
                 {
                     self addOpt("Entity Editing List", &newMenu, "Entity Editing List");
                     self addOptBool(AllEntitiesInvisible(), "Invisibility", &EntitiesInvisibility);
@@ -12344,32 +6026,32 @@ function PopulateEntityOptions(menu)
         case "Entity Editing List":
             self addMenu(menu);
 
-                if(IsDefined(level.SavedMapEntities) && level.SavedMapEntities.size)
+                if(IsDefined(level.menu_entities) && level.menu_entities.size)
                 {
-                    for(a = 0; a < level.SavedMapEntities.size; a++)
+                    for(a = 0; a < level.menu_entities.size; a++)
                     {
-                        if(IsDefined(level.SavedMapEntities[a]) && IsDefined(level.SavedMapEntities[a].model) && level.SavedMapEntities[a].model != "")
-                            self addOpt(CleanString(level.SavedMapEntities[a].model), &newMenu, "Entity Editor", false, a);
+                        if(IsDefined(level.menu_entities[a]) && IsDefined(level.menu_entities[a].model) && level.menu_entities[a].model != "")
+                            self addOpt(CleanString(level.menu_entities[a].model), &newMenu, "Entity Editor", false, a);
                     }
                 }
             break;
 
         case "Entity Editor":            
-            self addMenu(CleanString(level.SavedMapEntities[self.EntityEditorNumber].model));
-                self addOpt("Delete", &DeleteEntity, level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOptBool(level.SavedMapEntities[self.EntityEditorNumber].Invisibility, "Invisibility", &EntityInvisibility, level.SavedMapEntities[self.EntityEditorNumber]);
+            self addMenu(CleanString(level.menu_entities[self.EntityEditorNumber].model));
+                self addOpt("Delete", &DeleteEntity, level.menu_entities[self.EntityEditorNumber]);
+                self addOptBool(level.menu_entities[self.EntityEditorNumber].Invisibility, "Invisibility", &EntityInvisibility, level.menu_entities[self.EntityEditorNumber]);
                 self addOpt("Rotation", &newMenu, "Entity Rotation", false, self.EntityEditorNumber);
-                self addOptIncSlider("Scale", &EntityScale, 0.5, 1, 10, 0.5, level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOptSlider("Teleport", &TeleportEntity, Array("To Self", "To Entity", "To Crosshairs"), level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOpt("Reset Origin", &EntityResetOrigin, level.SavedMapEntities[self.EntityEditorNumber]);
+                self addOptIncSlider("Scale", &EntityScale, 0.5, 1, 10, 0.5, level.menu_entities[self.EntityEditorNumber]);
+                self addOptSlider("Teleport", &TeleportEntity, Array("To Self", "To Entity", "To Crosshairs"), level.menu_entities[self.EntityEditorNumber]);
+                self addOpt("Reset Origin", &EntityResetOrigin, level.menu_entities[self.EntityEditorNumber]);
             break;
 
         case "Entity Rotation":
             self addMenu("Rotation");
-                self addOpt("Reset", &EntityResetAngles, level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOptIncSlider("Pitch", &EntityRotation, -10, 0, 10, 1, "Pitch", level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOptIncSlider("Yaw", &EntityRotation, -10, 0, 10, 1, "Yaw", level.SavedMapEntities[self.EntityEditorNumber]);
-                self addOptIncSlider("Roll", &EntityRotation, -10, 0, 10, 1, "Roll", level.SavedMapEntities[self.EntityEditorNumber]);
+                self addOpt("Reset", &EntityResetAngles, level.menu_entities[self.EntityEditorNumber]);
+                self addOptIncSlider("Pitch", &EntityRotation, -10, 0, 10, 1, "Pitch", level.menu_entities[self.EntityEditorNumber]);
+                self addOptIncSlider("Yaw", &EntityRotation, -10, 0, 10, 1, "Yaw", level.menu_entities[self.EntityEditorNumber]);
+                self addOptIncSlider("Roll", &EntityRotation, -10, 0, 10, 1, "Roll", level.menu_entities[self.EntityEditorNumber]);
             break;
 
         case "Entities Rotation":
@@ -12384,18 +6066,18 @@ function PopulateEntityOptions(menu)
 
 function DeleteEntity(ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    isLast = level.SavedMapEntities.size <= 1;
-    level.SavedMapEntities = ((isLast ? undefined : ArrayRemove(level.SavedMapEntities, ent)));
+    isLast = level.menu_entities.size <= 1;
+    level.menu_entities = (isLast ? undefined : ArrayRemove(level.menu_entities, ent));
     self newMenu((isLast ? "Main" : undefined));
     ent Delete();
 }
 
 function EntityInvisibility(ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
 
     ent.Invisibility = BoolVar(ent.Invisibility);
@@ -12408,7 +6090,7 @@ function EntityInvisibility(ent)
 
 function EntityScale(scale, ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     ent SetScale(scale);
@@ -12416,7 +6098,7 @@ function EntityScale(scale, ent)
 
 function EntityResetAngles(ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     ent RotateTo(ent.savedAngles, 0.01);
@@ -12424,7 +6106,7 @@ function EntityResetAngles(ent)
 
 function EntityRotation(value, type, ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     switch(type)
@@ -12448,7 +6130,7 @@ function EntityRotation(value, type, ent)
 
 function TeleportEntity(location, ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     switch(location)
@@ -12472,7 +6154,7 @@ function TeleportEntity(location, ent)
 
 function EntityResetOrigin(ent)
 {
-    if(!IsDefined(ent) || !IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(ent) || !IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     ent.origin = ent.savedOrigin;
@@ -12480,12 +6162,12 @@ function EntityResetOrigin(ent)
 
 function EntitiesInvisibility()
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     level.EntitiesInvisibility = BoolVar(level.EntitiesInvisibility);
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(!IsDefined(ent))
             continue;
@@ -12505,10 +6187,10 @@ function EntitiesInvisibility()
 
 function AllEntitiesInvisible()
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent) && !Is_True(ent.Invisibility))
             return false;
@@ -12519,25 +6201,25 @@ function AllEntitiesInvisible()
 
 function DeleteEntities()
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent))
             ent Delete();
     }
     
-    level.SavedMapEntities = undefined;
+    level.menu_entities = undefined;
     self newMenu("Main");
 }
 
 function EntitiesScale(scale)
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent))
             ent SetScale(scale);
@@ -12546,10 +6228,10 @@ function EntitiesScale(scale)
 
 function EntitiesResetAngles()
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent))
             ent RotateTo(ent.savedAngles, 0.01);
@@ -12558,13 +6240,13 @@ function EntitiesResetAngles()
 
 function EntitiesRotation(value, type)
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
     switch(type)
     {
         case "Pitch":
-            foreach(ent in level.SavedMapEntities)
+            foreach(ent in level.menu_entities)
             {
                 if(IsDefined(ent))
                     ent RotatePitch(value, 0.2);
@@ -12572,7 +6254,7 @@ function EntitiesRotation(value, type)
             break;
         
         case "Yaw":
-            foreach(ent in level.SavedMapEntities)
+            foreach(ent in level.menu_entities)
             {
                 if(IsDefined(ent))
                     ent RotateYaw(value, 0.2);
@@ -12580,7 +6262,7 @@ function EntitiesRotation(value, type)
             break;
         
         case "Roll":
-            foreach(ent in level.SavedMapEntities)
+            foreach(ent in level.menu_entities)
             {
                 if(IsDefined(ent))
                     ent RotateRoll(value, 0.2);
@@ -12594,12 +6276,12 @@ function EntitiesRotation(value, type)
 
 function TeleportEntities(location)
 {
-    if(!IsDefined(level.SavedMapEntities) || IsDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!IsDefined(level.menu_entities) || IsDefined(level.menu_entities) && !level.menu_entities.size)
         return;
 
-    origin = (((IsDefined(location) && location == "To Self") ? self.origin : self TraceBullet()));
+    origin = ((IsDefined(location) && location == "To Self") ? self.origin : self TraceBullet());
 
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent))
             ent.origin = origin;
@@ -12608,66 +6290,20 @@ function TeleportEntities(location)
 
 function EntitiesResetOrigins()
 {
-    if(!isDefined(level.SavedMapEntities) || isDefined(level.SavedMapEntities) && !level.SavedMapEntities.size)
+    if(!isDefined(level.menu_entities) || isDefined(level.menu_entities) && !level.menu_entities.size)
         return;
     
-    foreach(ent in level.SavedMapEntities)
+    foreach(ent in level.menu_entities)
     {
         if(IsDefined(ent))
             ent.origin = ent.savedOrigin;
     }
 }
 
+// ============================================================
+// Functions/forge.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//forge.gsc
 function PopulateForgeOptions(menu)
 {
     switch(menu)
@@ -12914,13 +6550,8 @@ function ForgeShootModel()
         while(Is_True(self.ForgeShootModel))
         {
             self waittill("weapon_fired");
-
-            start = self GetWeaponMuzzlePoint();
-
-            if(!IsDefined(start) || !IsVec(start))
-                start = self GetEye();
-
-            spawn = SpawnScriptModel(start + VectorScale(AnglesToForward(self GetPlayerAngles()), 60), ent);
+            
+            spawn = SpawnScriptModel(self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 60), ent);
 
             if(IsDefined(spawn))
             {
@@ -12938,67 +6569,10 @@ function ForgeShootModel()
     }
 }
 
+// ============================================================
+// Functions/fun.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//fun.gsc
 function PopulateFunScripts(menu, player)
 {
     switch(menu)
@@ -13012,7 +6586,7 @@ function PopulateFunScripts(menu, player)
                 self addOpt("Adventure Time", &AdventureTime, player);
                 self addOpt("Force Field Options", &newMenu, "Force Field Options");
                 self addOpt("Effects Man Options", &newMenu, "Effects Man Options");
-                self addOpt("Audio Quotes", &newMenu, "Sound/Music");
+                self addOpt("Sounds & Jingles", &newMenu, "Sounds & Jingles");
                 self addOpt("Hit Markers", &newMenu, "Hit Markers");
                 self addOptSlider("Insta-Kill", &PlayerInstaKill, Array("Disable", "All", "Melee"), player);
                 self addOptSlider("Death Skull", &SpawnDeathSkull, Array("Spawn", "Delete All"), player);
@@ -13092,7 +6666,7 @@ function PopulateFunScripts(menu, player)
                 self addOptBool((IsString(player.HitMarkerColor) && player.HitMarkerColor == "Rainbow"), "Smooth Rainbow", &HitMarkerColor, "Rainbow", player);
             break;
         
-        case "Sound/Music":
+        case "Sounds & Jingles":
             MenuVOXCategory = [];
 
             foreach(category, sound in level.sndplayervox)
@@ -13143,8 +6717,7 @@ function PopulateFunScripts(menu, player)
                     if(CleanString(category, true) != menu)
                         continue;
                     
-                    foreach(subcategory, vox in level.sndplayervox[category])
-                        self addOpt((IsSubStr(subcategory, "specialty") ? ReturnPerkName(CleanString(subcategory)) : CleanString(subcategory, true)), &create_and_play_dialog, category, subcategory, player);
+                    foreach(subcategory, vox in level.sndplayervox[category]) self addOpt((IsSubStr(subcategory, "specialty") ? ReturnPerkName(CleanString(subcategory)) : CleanString(subcategory, true)), &create_and_play_dialog, category, subcategory, player);
                 }
             }
             break;
@@ -13157,7 +6730,7 @@ function SendEarthquake(player)
 }
 
 function AdventureTime(player)
-{  
+{
     if(Is_True(player.AdventureTime))
         return;
 
@@ -13377,7 +6950,7 @@ function DisableEffectMan(player)
 function PlayPerkMachineSound(sound, player)
 {
     player notify("sndDone");
-    player PlaySoundWithNotify(sound, "sndDone");
+	player PlaySoundWithNotify(sound, "sndDone");
 }
 
 function create_and_play_dialog(category, subcategory, player)
@@ -13413,7 +6986,7 @@ function HitMarkerColor(color, player)
 
 function PlayerInstaKill(type, player)
 {
-    player.PlayerInstaKill = (((type != "Disable") ? type : undefined));
+    player.PlayerInstaKill = ((type != "Disable") ? type : undefined);
 }
 
 function SpawnDeathSkull(action, player)
@@ -13468,14 +7041,12 @@ function DeathSkullLinker(skulls, player)
     
     while(IsDefined(self))
     {
-        if(IsDefined(player.DeathSkullEnts) && player.DeathSkullEnts.size && IsDefined(level._effect["tesla_bolt"]))
+        if(IsDefined(skulls) && skulls.size && IsDefined(level._effect["tesla_bolt"]))
         {
-            for(a = 1; a < player.DeathSkullEnts.size; a++)
+            for(a = 0; a < skulls.size; a++)
             {
-                if(!IsDefined(player.DeathSkullEnts[a]))
-                    continue;
-                
-                PlayFXOnTag(level._effect["tesla_bolt"], player.DeathSkullEnts[a], "tag_origin");
+                if(IsDefined(skulls[a]))
+                    PlayFXOnTag(level._effect["tesla_bolt"], skulls[a], "tag_origin");
             }
         }
 
@@ -13671,16 +7242,19 @@ function ZombieCounter(player)
     {
         while(Is_True(player.ZombieCounter) && Is_Alive(player))
         {
+            bgAlpha = ((self.MenuDesign == "Classic") ? 0.85 : 1);
+            bgColor = ((self.MenuDesign == "Classic") ? (25, 25, 25) : ((self.MenuDesign == "Apparition") ? (42, 42, 42) : (0, 0, 0)));
+            
             if(!IsDefined(player.ZombieCounterHud) || !player.ZombieCounterHud.size)
             {
                 if(!IsDefined(player.ZombieCounterHud))
                     player.ZombieCounterHud = [];
                 
                 xPos = 5;
-                yPos = 33;
+                yPos = 5;
 
                 player.ZombieCounterHud[0] = player LUI_createRectangle(0, (xPos - 3), (yPos - 1), 227, 49, player.MainTheme, "white", 1);
-                player.ZombieCounterHud[1] = player LUI_createRectangle(0, (xPos - 2), yPos, (player GetLUIMenuData(player.ZombieCounterHud[0], "width") - 2), (player GetLUIMenuData(player.ZombieCounterHud[0], "height") - 2), (42, 42, 42), "white", 1);
+                player.ZombieCounterHud[1] = player LUI_createRectangle(0, (xPos - 2), yPos, (player GetLUIMenuData(player.ZombieCounterHud[0], "width") - 2), (player GetLUIMenuData(player.ZombieCounterHud[0], "height") - 2), bgColor, "white", bgAlpha);
                 
                 player.ZombieCounterHud[2] = player LUI_createText("Alive: ", 0, xPos, yPos, 41, (1, 1, 1));
                 player.ZombieCounterHud[3] = player LUI_createText("Remaining For Round: ", 0, xPos, (yPos + 20), 154, (1, 1, 1));
@@ -13690,8 +7264,28 @@ function ZombieCounter(player)
             }
             else
             {
-                player SetLUIMenuData(player.ZombieCounterHud[4], "text", zombie_utility::get_current_zombie_count());
-                player SetLUIMenuData(player.ZombieCounterHud[5], "text", level.zombie_total);
+                if(IsDefined(player.ZombieCounterHud) && player.ZombieCounterHud.size)
+                {
+                    if(Is_Alive(player) && !Is_True(player.refreshZombieCounter))
+                    {
+                        if(IsDefined(player.ZombieCounterHud[4]))
+                            player SetLUIMenuData(player.ZombieCounterHud[4], "text", zombie_utility::get_current_zombie_count());
+                        
+                        if(IsDefined(player.ZombieCounterHud[5]))
+                            player SetLUIMenuData(player.ZombieCounterHud[5], "text", level.zombie_total);
+                    }
+                    else
+                    {
+                        for(a = 0; a < player.ZombieCounterHud.size; a++)
+                        {
+                            if(IsDefined(player.ZombieCounterHud[a]))
+                                player CloseLUIMenu(player.ZombieCounterHud[a]);
+                        }
+                        
+                        player.ZombieCounterHud = undefined;
+                        player.refreshZombieCounter = undefined;
+                    }
+                }
             }
 
             wait 0.01;
@@ -13702,7 +7296,7 @@ function ZombieCounter(player)
     }
     else
     {
-        if(IsDefined(player.ZombieCounterHud) && player.ZombieCounterHud)
+        if(IsDefined(player.ZombieCounterHud) && player.ZombieCounterHud.size)
         {
             for(a = 0; a < player.ZombieCounterHud.size; a++)
             {
@@ -13729,29 +7323,15 @@ function LightProtector(player)
 
         while(Is_True(player.LightProtector) && IsDefined(player.LightProtect) && Is_Alive(player))
         {
-            player.LightProtect MoveTo(player GetTagOrigin("j_head") + (0, 0, 45), 0.1);
+            player.LightProtect.origin = player GetTagOrigin("j_head") + (0, 0, 45);
             target = player GetLightProtectorTarget();
             
-            if(IsDefined(target) && CanControl(target))
+            if(IsDefined(target) && CanControl(target) && !Is_True(target.LightProtector))
             {
-                target.LightProtector = true;
-                targetOrigin = target GetTagOrigin("j_mainroot");
-
-                if(!IsDefined(targetOrigin) || !IsVec(targetOrigin))
-                {
-                    test = target GetTagOrigin("tag_body");
-
-                    if(IsDefined(test) && IsVec(test))
-                        targetOrigin = test;
-                    else
-                        target = undefined;
-                }
-
-                if(IsDefined(target) && IsDefined(targetOrigin) && IsVec(targetOrigin))
-                    player thread UFOShoot(player.LightProtect.origin, targetOrigin, 55);
+                player thread LightProtectorTarget(target);
             }
             
-            wait 0.1;
+            wait 0.01;
         }
 
         if(Is_True(player.LightProtector) && !IsDefined(player.LightProtect))
@@ -13767,6 +7347,36 @@ function LightProtector(player)
     }
 }
 
+function LightProtectorTarget(target)
+{
+    self endon("disconnect");
+    target endon("death");
+
+    if(Is_True(target.LightProtector) || !IsDefined(target) || !IsAlive(target))
+        return;
+    
+    target.LightProtector = true;
+    targetOrigin = target GetTagOrigin("j_mainroot");
+
+    if(!IsDefined(targetOrigin) || !IsVec(targetOrigin))
+    {
+        test = target GetTagOrigin("tag_body");
+
+        if(IsDefined(test) && IsVec(test))
+            targetOrigin = test;
+        else
+            target = undefined;
+    }
+
+    if(IsDefined(target) && IsDefined(targetOrigin) && IsVec(targetOrigin))
+        self thread UFOShoot(self.LightProtect.origin, targetOrigin, 100, 0.1);
+    
+    wait 1;
+
+    if(IsDefined(target) && IsAlive(target))
+        target.LightProtector = undefined;
+}
+
 function GetLightProtectorTarget(distance = 500)
 {
     zombies = GetAITeamArray(level.zombie_team);
@@ -13778,7 +7388,7 @@ function GetLightProtectorTarget(distance = 500)
     
     for(a = 0; a < zombies.size; a++)
     {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || zombies[a] DamageConeTrace(self.origin, self) < 0.1 || Distance(self.origin, zombies[a].origin) > distance || Is_True(zombies[a].LightProtector))
+        if(!CanControl(zombies[a]) || zombies[a] DamageConeTrace(self.origin, self) < 0.1 || Distance(self.origin, zombies[a].origin) > distance || Is_True(zombies[a].LightProtector))
             continue;
         
         if(zombies[a].archetype == "zombie" && !Is_True(zombies[a].zombie_think_done) || zombies[a].archetype != "zombie" && Is_True(zombies[a].ignoreme))
@@ -13877,12 +7487,7 @@ function ForgeMode(player)
 
             if(player AdsButtonPressed() && !IsDefined(grabEnt))
             {
-                start = player GetWeaponMuzzlePoint();
-
-                if(!IsDefined(start) || !IsVec(start))
-                    start = player GetEye();
-                
-                trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
+                trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
 
                 if(IsDefined(trace["entity"]) && trace["entity"].model != "tag_origin")
                     grabEnt = trace["entity"];
@@ -14073,14 +7678,9 @@ function CodJumper(player)
                         player.codboxes[a] Delete();
                 }
             }
-            
-            start = player GetWeaponMuzzlePoint();
 
-            if(!IsDefined(start) || !IsVec(start))
-                start = player GetEye();
-            
             color = Pow(2, RandomInt(3));
-            trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
+            trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
             
             origin = trace["position"];
             surface = trace["surfacetype"];
@@ -14212,7 +7812,6 @@ function HealthBar(player)
             if(!IsDefined(player.HealthBarUI) || !player.HealthBarUI.size)
             {
                 player.HealthBarUI = [];
-
                 player.HealthBarUI[0] = player LUI_createRectangle(0, 24, 600, (maxHealthWidth + 2), 14, (0, 0, 0), "white", 1);
                 player.HealthBarUI[1] = player LUI_createRectangle(0, 25, 601, healthWidth, 12, (1, 1, 1), "white", 0.9);
             }
@@ -14421,7 +8020,7 @@ function electric_fire_cherry_cooldown_timer(current_weapon)
     self endon("death");
     self endon("disconnect");
 
-    reloadTime = ((self HasPerk("specialty_fastreload") ? (0.25 * GetDvarFloat("perk_weapReloadMultiplier")) : 0.25));
+    reloadTime = (self HasPerk("specialty_fastreload") ? (0.25 * GetDvarFloat("perk_weapReloadMultiplier")) : 0.25);
     waitTime = (reloadTime + 3);
 
     wait waitTime;
@@ -14543,12 +8142,7 @@ function ShootPowerUps(type = "Disable", player)
     {
         player waittill("weapon_fired");
 
-        start = player GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = player GetEye();
-
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
+        trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
         origin = trace["position"];
         surface = trace["surfacetype"];
 
@@ -14563,7 +8157,7 @@ function ShootPowerUps(type = "Disable", player)
         }
         else
         {
-            powerup = level CustomPowerupSpawn(powerups[RandomInt(powerups.size)], start + VectorScale(AnglesToForward(player GetPlayerAngles()), 60));
+            powerup = level CustomPowerupSpawn(powerups[RandomInt(powerups.size)], player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 60));
         
             if(IsDefined(powerup))
                 powerup PhysicsLaunch(powerup.origin, VectorScale(AnglesToForward(player GetPlayerAngles()), 175));
@@ -14587,12 +8181,7 @@ function RocketRiding(player)
             if(zm_utility::GetWeaponClassZM(weaponName) != "weapon_launcher")
                 continue;
             
-            start = player GetWeaponMuzzlePoint();
-
-            if(!IsDefined(start) || !IsVec(start))
-                start = player GetEye();
-            
-            trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 200), 1, player);
+            trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 200), 1, player);
             rider = undefined;
 
             foreach(client in level.players)
@@ -14682,12 +8271,7 @@ function GrapplingGun(player)
         {
             player waittill("weapon_fired");
 
-            start = player GetWeaponMuzzlePoint();
-
-            if(!IsDefined(start) || !IsVec(start))
-                start = player GetEye();
-            
-            trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
+            trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 0, player);
             origin = trace["position"];
             surface = trace["surfacetype"];
 
@@ -14778,12 +8362,7 @@ function GravityGun(player)
 
             if(player AdsButtonPressed() && !IsDefined(grabEnt))
             {
-                start = player GetWeaponMuzzlePoint();
-
-                if(!IsDefined(start) || !IsVec(start))
-                    start = player GetEye();
-                
-                trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
+                trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
 
                 if(IsDefined(trace["entity"]) && !Is_True(trace["entity"].GravityGunLaunched) && trace["entity"].model != "tag_origin")
                     grabEnt = trace["entity"];
@@ -14828,12 +8407,7 @@ function DeleteGun(player)
         {
             if(player AdsButtonPressed())
             {
-                start = player GetWeaponMuzzlePoint();
-
-                if(!IsDefined(start) || !IsVec(start))
-                    start = player GetEye();
-                
-                trace = BulletTrace(start, start + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
+                trace = BulletTrace(player GetEye(), player GetEye() + VectorScale(AnglesToForward(player GetPlayerAngles()), 1000000), 1, player);
 
                 if(IsDefined(trace["entity"]) && !IsPlayer(trace["entity"]))
                     trace["entity"] Delete();
@@ -14947,7030 +8521,10 @@ function DamagePointsMultiplier(multiplier, player)
     player.DamagePointsMultiplier = multiplier;
 }
 
+// ============================================================
+// Functions/GameModes/AllTheWeapons.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//message.gsc
-function PopulateMessageMenu(menu)
-{
-    switch(menu)
-    {
-        case "Message Menu":
-            self addMenu(menu);
-                self addOptSlider("Display Type", &MessageDisplay, Array("Notify", "Print Bold"));
-                self addOpt("Custom Message", &Keyboard, &DisplayMessage);
-                self addOpt("Miscellaneous", &newMenu, "Miscellaneous Messages");
-                self addOpt("Advertisements", &newMenu, "Advertisements Messages");
-            break;
-        
-        case "Miscellaneous Messages":
-            self addMenu("Miscellaneous");
-                self addOpt("Want Menu?", &DisplayMessage, "Want Menu?");
-                self addOpt("Who's Modding?", &DisplayMessage, "Who's Modding?");
-                self addOpt(CleanName(self getName()), &DisplayMessage, CleanName(self getName()) + " <3");
-                self addOpt("Deranked", &DisplayMessage, "You've Been ^1Deranked");
-                self addOpt("^BBUTTON_ZM_VIAL_ICON^", &DisplayMessage, "^BBUTTON_ZM_VIAL_ICON^ ^BBUTTON_ZM_VIAL_ICON^ ^BBUTTON_ZM_VIAL_ICON^");
-                self addOpt("Host", &DisplayMessage, "Your Host Today Is " + CleanName(bot::get_host_player() getName()));
-            break;
-        
-        case "Advertisements Messages":
-            self addMenu("Advertisements");
-                self addOpt("Welcome", &DisplayMessage, "Welcome To " + GetMenuName());
-                self addOpt("Discord Server", &DisplayMessage, "Discord Server: discord.gg/apparitionbo3");
-                self addOpt(GetMenuName(), &DisplayMessage, GetMenuName() + " Is The Biggest & Best Menu For BO3 Zombies");
-                self addOpt("Developer", &DisplayMessage, GetMenuName() + " Was Developed By CF4_99");
-                self addOpt("YouTube", &DisplayMessage, "YouTube: CF4_99");
-            break;
-    }
-}
-
-function MessageDisplay(type)
-{
-    self.MessageDisplay = type;
-}
-
-function DisplayMessage(message)
-{
-    if(!IsDefined(self.MessageDisplay))
-        self.MessageDisplay = "Notify";
-    
-    switch(self.MessageDisplay)
-    {
-        case "Notify":
-            thread typeWriter(message);
-            break;
-        
-        case "Print Bold":
-            iPrintlnBold(message);
-            break;
-        
-        default:
-            break;
-    }
-}
-
-function typeWriter(message)
-{
-    if(!IsDefined(level.LobbyMessageQueue))
-        level.LobbyMessageQueue = [];
-
-    level.LobbyMessageQueue[level.LobbyMessageQueue.size] = message;
-
-    if(Is_True(level.LobbyTypeWriterCreating) || IsDefined(level.LobbyTypeWriterMessage))
-        return;
-
-    level.LobbyTypeWriterCreating = true;
-
-    while(level.LobbyMessageQueue.size)
-    {
-        next = level.LobbyMessageQueue[0];
-        newQueue = [];
-
-        for(a = 1; a < level.LobbyMessageQueue.size; a++)
-            newQueue[newQueue.size] = level.LobbyMessageQueue[a];
-        
-        level.LobbyMessageQueue = newQueue;
-
-        level.LobbyTypeWriterMessage = createServerText("objective", 1.7, 1, "", "TOP", "TOP", 0, 75, 1, level.RGBFadeColor);
-        level.LobbyTypeWriterMessage thread SetTextFX(next, 4);
-        level.LobbyTypeWriterMessage thread HudRGBFade();
-
-        while(IsDefined(level.LobbyTypeWriterMessage))
-            wait 0.1;
-    }
-
-    level.LobbyTypeWriterCreating = undefined;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//model_manipulation.gsc
-function PopulateModelManipulation(menu, player)
-{
-    switch(menu)
-    {
-        case "Model Manipulation":            
-            self addMenu(menu);
-                self addOptBool(player.ThirdPerson, "Third Person", &ThirdPerson, player);
-                self addOpt("Reset", &ResetPlayerModel, player);
-                self addOpt("");
-
-                if(IsDefined(level.menu_models) && level.menu_models.size)
-                {
-                    for(a = 0; a < level.menu_models.size; a++)
-                        self addOpt(CleanString(level.menu_models[a]), &SetPlayerModel, level.menu_models[a], player);
-                }
-            break;
-    }
-}
-
-function ResetPlayerModel(player)
-{
-    if(Is_True(player.ModelManipulation))
-        player.ModelManipulation = BoolVar(player.ModelManipulation);
-
-    if(IsDefined(player.spawnedPlayerModel))
-        player.spawnedPlayerModel Delete();
-    
-    if(!Is_True(player.Invisibility))
-        player Show();
-}
-
-function SetPlayerModel(model, player)
-{
-    player endon("disconnect");
-    player notify("StopSetPlayerModel");
-    player endon("StopSetPlayerModel");
-
-    if(IsDefined(player.spawnedPlayerModel))
-        player.spawnedPlayerModel Delete();
-
-    wait 0.05;
-
-    player.ModelManipulation = true;
-    player.spawnedPlayerModel = Spawn("script_model", player.origin);
-    player.spawnedPlayerModel.angles = player.angles;
-    player.spawnedPlayerModel SetModel(model);
-    player.spawnedPlayerModel NotSolid();
-
-    while(Is_True(player.ModelManipulation) && Is_Alive(player))
-    {
-        player Hide();
-
-        if(IsDefined(player.spawnedPlayerModel))
-        {
-            player.spawnedPlayerModel MoveTo(player.origin, 0.1);
-            player.spawnedPlayerModel RotateTo(player.angles, 0.1);
-        }
-
-        wait 0.1;
-    }
-
-    if(Is_True(player.ModelManipulation))
-        player ResetPlayerModel(player);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//player.gsc
-function PopulatePlayerOptions(menu, player)
-{
-    switch(menu)
-    {
-        case "Options":
-            submenus = Array("Verification", "Basic Scripts", "Teleport Menu", "Weaponry", "Bullet Menu", "Fun Scripts", "Model Manipulation", "Aimbot Menu", "Model Attachment", "Malicious Options");
-            
-            self addMenu("[^2" + player.accessLevel + "^7]" + CleanName(player getName()));
-
-                for(a = 0; a < submenus.size; a++)
-                    self addOpt(submenus[a], &newMenu, submenus[a]);
-
-                self addOpt("Send Message", &Keyboard, &MessagePlayer, player);
-                self addOptBool(player.FreezePlayer, "Freeze", &FreezePlayer, player);
-                self addOpt("Kick", &KickPlayer, player);
-            break;
-        
-        case "Verification":
-            self addMenu(menu);
-                self addOpt("Save Verification", &SavePlayerVerification, player);
-
-                for(a = 1; a < (GetAccessLevels().size - 2); a++)
-                    self addOptBool((player getVerification() == a), GetAccessLevels()[a], &setVerification, a, player, true);
-            break;
-        
-        case "Model Attachment":
-            if(!IsDefined(self.playerAttachBone))
-                self.playerAttachBone = "j_head";
-
-            self addMenu(menu);
-                
-                if(IsDefined(level.menu_models) && level.menu_models.size)
-                {
-                    self addOptSlider("Location", &PlayerAttachmentBone, Array("j_head", "j_neck", "j_spine4", "j_spinelower", "j_mainroot", "pelvis", "j_ankle_ri", "j_ankle_le"));
-                    self addOpt("Detach All", &PlayerDetachModels, player);
-                    self addOpt("");
-
-                    for(a = 0; a < level.menu_models.size; a++)
-                    {
-                        if(level.menu_models[a] != "defaultactor") //Attaching the defaultactor to a player can cause a crash.
-                            self addOpt(CleanString(level.menu_models[a]), &PlayerModelAttachment, level.menu_models[a], player);
-                    }
-                }
-            break;
-        
-        case "Malicious Options":
-            if(!IsDefined(player.ShellShockTime))
-                player.ShellShockTime = 1;
-            
-            self addMenu(menu);
-                self addOpt("Open Pause Menu", &PlayerOpenPauseMenu, player);
-                self addOpt("Disable Actions", &newMenu, "Disable Actions");
-                self addOptSlider("Set Stance", &SetPlayerStance, Array("Prone", "Crouch", "Stand"), player);
-                self addOptSlider("Loop Stance", &LoopStance, Array("Disable", "Prone", "Crouch", "Stand"), player);
-                self addOpt("Launch", &LaunchPlayer, player);
-                self addOpt("Mortar Strike", &MortarStrikePlayer, player);
-
-                if(ReturnMapName() == "Shadows Of Evil" || ReturnMapName() == "Origins")
-                    self addOptSlider("Jump Scare", &JumpScarePlayer, Array("Sound & Picture", "Sound Only"), player);
-                
-                self addOptBool(player.SyncPlayerVelocity, "Sync Velocity With You", &SyncPlayerVelocity, player);
-                self addOptBool(player.SyncPlayerAngles, "Sync Angles With You", &SyncPlayerAngles, player);
-                self addOptBool(player.AutoDown, "Auto-Down", &AutoDownPlayer, player);
-                self addOptBool(player.FlashLoop, "Flash Loop", &FlashLoop, player);
-                self addOptBool(player.SpinPlayer, "Spin Player", &SpinPlayer, player);
-                self addOptBool(player.BlackScreen, "Black Screen", &BlackScreenPlayer, player);
-                self addOptBool(player.FakeLag, "Fake Lag", &FakeLag, player);
-                self addOptBool(self.AttachToPlayer, "Attach Self To Player", &AttachSelfToPlayer, player);
-                self addOptSlider("Shellshock", &ApplyShellShock, Array("Concussion Grenade", "Zombie Death", "Explosion"), player);
-                self addOptIncSlider("Shellshock Time", &SetShellShockTime, 1, 1, 30, 1, player);
-                self addOptSlider("Show IP", &ShowPlayerIP, Array("Self", "Player"), player);
-                self addOpt("Fake Damage", &FakeDamagePlayer, player);
-                self addOpt("Crash Game", &CrashPlayer, player);
-            break;
-        
-        case "Disable Actions":
-            self addMenu(menu);
-                self addOptBool(player.DisableAiming, "Aiming", &DisableAiming, player);
-                self addOptBool(player.DisableJumping, "Jumping", &DisableJumping, player);
-                self addOptBool(player.DisableSprinting, "Sprinting", &DisableSprinting, player);
-                self addOptBool(player.DisableWeaps, "Weapons", &DisableWeaps, player);
-                self addOptBool(player.DisableOffhands, "Offhand Weapons", &DisableOffhands, player);
-            break;
-    }
-}
-
-//Miscellaneous Player Scripts
-function MessagePlayer(msg, player)
-{
-    player iPrintlnBold("^2" + CleanName(self getName()) + ": ^7" + msg);
-}
-
-function FreezePlayer(player)
-{
-    player endon("disconnect");
-
-    player.FreezePlayer = BoolVar(player.FreezePlayer);
-    
-    if(Is_True(player.FreezePlayer))
-    {
-        while(Is_True(player.FreezePlayer))
-        {
-            player FreezeControls(true);
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player FreezeControls(false);
-    }
-}
-
-function KickPlayer(player)
-{
-    if(player IsHost())
-        return self iPrintlnBold("^1ERROR: ^7You Can't Kick The Host");
-    
-    if(player isDeveloper())
-        return self iPrintlnBold("^1ERROR: ^7You Can't Kick The Developer");
-    
-    Kick(player GetEntityNumber(), "EXE_PLAYERKICKED_NOTSPAWNED");
-}
-
-//Model Attachment Functions
-function PlayerAttachmentBone(tag)
-{
-    self.playerAttachBone = tag;
-}
-
-function PlayerModelAttachment(model, player)
-{
-    if(!IsDefined(player.ModelAttachment))
-        player.ModelAttachment = [];
-
-    player.ModelAttachment[player.ModelAttachment.size] = model + ";" + self.playerAttachBone;
-    player Attach(model, self.playerAttachBone, true);
-}
-
-function PlayerDetachModels(player)
-{
-    if(!IsDefined(player.ModelAttachment) || IsDefined(player.ModelAttachment) && !player.ModelAttachment.size)
-        return self iPrintlnBold("^1ERROR: ^7No Attached Models Found");
-    
-    for(a = 0; a < player.ModelAttachment.size; a++)
-    {
-        attach = StrTok(player.ModelAttachment[a], ";");
-        player Detach(attach[0], attach[1]);
-    }
-
-    player.ModelAttachment = undefined;
-}
-
-//Malicious Player Functions
-function PlayerOpenPauseMenu(player)
-{
-    player OpenMenu("StartMenu_Main");
-}
-
-function DisableAiming(player)
-{
-    player endon("disconnect");
-
-    player.DisableAiming = BoolVar(player.DisableAiming);
-
-    if(Is_True(player.DisableAiming))
-    {
-        while(Is_True(player.DisableAiming))
-        {
-            player AllowAds(false);
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player AllowAds(true);
-    }
-}
-
-function DisableJumping(player)
-{
-    player endon("disconnect");
-
-    player.DisableJumping = BoolVar(player.DisableJumping);
-    
-    if(Is_True(player.DisableJumping))
-    {
-        while(Is_True(player.DisableJumping))
-        {
-            player AllowJump(false);
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player AllowJump(true);
-    }
-}
-
-function DisableSprinting(player)
-{
-    player endon("disconnect");
-
-    player.DisableSprinting = BoolVar(player.DisableSprinting);
-    
-    if(Is_True(player.DisableSprinting))
-    {
-        while(Is_True(player.DisableSprinting))
-        {
-            player AllowSprint(false);
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player AllowSprint(true);
-    }
-}
-
-function DisableOffhands(player)
-{
-    player endon("disconnect");
-
-    player.DisableOffhands = BoolVar(player.DisableOffhands);
-    
-    if(Is_True(player.DisableOffhands))
-    {
-        while(Is_True(player.DisableOffhands))
-        {
-            player DisableOffHandWeapons();
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player EnableOffHandWeapons();
-    }
-}
-
-function DisableWeaps(player)
-{
-    player endon("disconnect");
-
-    player.DisableWeaps = BoolVar(player.DisableWeaps);
-    
-    if(Is_True(player.DisableWeaps))
-    {
-        while(Is_True(player.DisableWeaps))
-        {
-            player DisableWeapons();
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player EnableWeapons();
-    }
-}
-
-function SetPlayerStance(stance, player)
-{
-    player SetStance(ToLower(stance));
-}
-
-function LoopStance(stance = "Disable", player)
-{
-    player notify("EndLoopStance");
-    player endon("EndLoopStance");
-    player endon("disconnect");
-    
-    while(stance != "Disable")
-    {
-        player SetStance(ToLower(stance));
-        wait 0.01;
-    }
-}
-
-function LaunchPlayer(player)
-{
-    player SetOrigin(player.origin + (0, 0, 5));
-    player SetVelocity(player GetVelocity() + (RandomIntRange(-500, 500), RandomIntRange(-500, 500), RandomIntRange(1500, 5000)));
-}
-
-function MortarStrikePlayer(player)
-{
-    player endon("disconnect");
-
-    for(a = 0; a < 3; a++)
-    {
-        MagicBullet(GetWeapon("launcher_standard"), player.origin + (0, 0, 2500), player.origin);
-        wait 0.15;
-    }
-}
-
-function JumpScarePlayer(type, player)
-{
-    if(Is_True(player.JumpScarePlayer))
-        return;
-    player.JumpScarePlayer = true;
-
-    player endon("disconnect");
-
-    player PlaySoundToPlayer(((ReturnMapName() == "Shadows Of Evil") ? "zmb_zod_egg_scream" : "zmb_easteregg_scarydog"), player);
-
-    if(type == "Sound & Picture")
-        player.var_92fcfed8 = player OpenLUIMenu(((ReturnMapName() == "Shadows Of Evil") ? "JumpScare" : "JumpScare-Tomb"));
-
-    wait 0.55;
-
-    if(IsDefined(player.var_92fcfed8))
-        player CloseLUIMenu(player.var_92fcfed8);
-    
-    player.JumpScarePlayer = BoolVar(player.JumpScarePlayer);
-}
-
-function SyncPlayerVelocity(player)
-{
-    if(player == self && !Is_True(player.SyncPlayerVelocity))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Sync Velocity With Yourself");
-    
-    self endon("disconnect");
-    player endon("disconnect");
-
-    player.SyncPlayerVelocity = BoolVar(player.SyncPlayerVelocity);
-
-    while(Is_True(player.SyncPlayerVelocity))
-    {
-        player SetVelocity(self GetVelocity());
-        wait 0.01;
-    }
-}
-
-function SyncPlayerAngles(player)
-{
-    if(player == self && !Is_True(player.SyncPlayerAngles))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Sync Angles With Yourself");
-    
-    self endon("disconnect");
-    player endon("disconnect");
-
-    player.SyncPlayerAngles = BoolVar(player.SyncPlayerAngles);
-
-    while(Is_True(player.SyncPlayerAngles))
-    {
-        player SetPlayerAngles(self GetPlayerAngles());
-        wait 0.01;
-    }
-}
-
-function AutoDownPlayer(player)
-{
-    if(player IsHost() || player isDeveloper())
-        return;
-    
-    player endon("disconnect");
-
-    player.AutoDown = BoolVar(player.AutoDown);
-    
-    while(Is_True(player.AutoDown))
-    {
-        if(Is_Alive(player) && !player IsDown())
-        {
-            if(Is_True(player.playerGodmode))
-                player Godmode(player);
-
-            if(Is_True(player.PlayerDemiGod))
-                player DemiGod(player);
-            
-            player DisableInvulnerability(); //Just to ensure that the player is able to be damaged.
-            player DoDamage(player.health + 999, (0, 0, 0));
-        }
-
-        wait 0.1;
-    }
-}
-
-function FlashLoop(player)
-{
-    player endon("disconnect");
-
-    player.FlashLoop = BoolVar(player.FlashLoop);
-    
-    if(Is_True(player.FlashLoop))
-    {
-        while(Is_True(player.FlashLoop))
-        {
-            player ShellShock("concussion_grenade_mp", 5);
-            wait 5;
-        }
-    }
-    else
-    {
-        player StopShellShock();
-    }
-}
-
-function SpinPlayer(player)
-{
-    player endon("disconnect");
-
-    player.SpinPlayer = BoolVar(player.SpinPlayer);
-    
-    while(Is_True(player.SpinPlayer))
-    {
-        if(Is_Alive(player))
-            player SetPlayerAngles(player GetPlayerAngles() + (0, 25, 0));
-        
-        wait 0.01;
-    }
-}
-
-function BlackScreenPlayer(player)
-{
-    player.BlackScreen = BoolVar(player.BlackScreen);
-
-    if(Is_True(player.BlackScreen))
-    {
-        if(IsDefined(player.BlackScreenHud) && player.BlackScreenHud.size)
-            destroyAll(player.BlackScreenHud);
-        
-        player.BlackScreenHud = [];
-
-        for(a = 0; a < 2; a++)
-            player.BlackScreenHud[player.BlackScreenHud.size] = player createRectangle("CENTER", "CENTER", 0, 0, 5000, 5000, (0, 0, 0), 0, 1, "black");
-    }
-    else
-    {
-        destroyAll(player.BlackScreenHud);
-    }
-}
-
-function FakeLag(player)
-{
-    player endon("disconnect");
-
-    player.FakeLag = BoolVar(player.FakeLag);
-    
-    while(Is_True(player.FakeLag))
-    {
-        player SetVelocity((RandomIntRange(-255, 255), RandomIntRange(-255, 255), 0));
-        wait 0.25;
-
-        player SetVelocity((0, 0, 0));
-        wait 0.025;
-    }
-}
-
-function AttachSelfToPlayer(player)
-{
-    if(player == self)
-        return self iPrintlnBold("^1ERROR: ^7You Can't Attach To Yourself");
-    
-    if(!Is_Alive(player))
-        return self iPrintlnBold("^1ERROR: ^7Player Isn't Alive");
-    
-    if(self isPlayerLinked() && !Is_True(self.AttachToPlayer))
-        return self iPrintlnBold("^1ERROR: ^7You're Linked To An Entity");
-    
-    player endon("disconnect");
-
-    self.AttachToPlayer = BoolVar(self.AttachToPlayer);
-
-    if(Is_True(self.AttachToPlayer))
-    {
-        while(Is_True(self.AttachToPlayer))
-        {
-            if(!Is_Alive(player))
-            {
-                self.AttachToPlayer = undefined;
-                break;
-            }
-
-            if(!self IsLinkedTo(player))
-                self PlayerLinkTo(player, "j_head");
-            
-            wait 0.1;
-        }
-        
-        self Unlink();
-    }
-    else
-    {
-        self Unlink();
-    }
-}
-
-function ApplyShellShock(shock, player)
-{
-    switch(shock)
-    {
-        case "Concussion Grenade":
-            shock = "concussion_grenade_mp";
-            break;
-        
-        case "Zombie Death":
-            shock = "zombie_death";
-            break;
-        
-        case "Explosion":
-            shock = "explosion";
-            break;
-        
-        default:
-            break;
-    }
-
-    player ShellShock(shock, player.ShellShockTime);
-}
-
-function SetShellShockTime(time, player)
-{
-    player.ShellShockTime = time;
-}
-
-function ShowPlayerIP(showto, player)
-{
-    showto = (((showto == "Self") ? self : player));
-    showto iPrintlnBold(StrTok(player GetIPAddress(), "Public Addr: ")[0]);
-}
-
-function FakeDamagePlayer(player)
-{
-    player FakeDamageFrom((RandomIntRange(-100, 100), RandomIntRange(-100, 100), RandomIntRange(-100, 100)));
-}
-
-function CrashPlayer(player)
-{
-    if(player IsHost() || player isDeveloper())
-        return self iPrintlnBold("^1ERROR: ^7Can't Crash Player");
-    
-    player iPrintlnBold("^B");
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//powerups.gsc
-function PopulatePowerupMenu(menu)
-{
-    switch(menu)
-    {
-        case "Power-Up Menu":
-            if(!IsDefined(self.PowerUpSpawnLocation))
-                self.PowerUpSpawnLocation = "Crosshairs";
-            
-            powerups = GetArrayKeys(level.zombie_include_powerups);
-            
-            self addMenu(menu);
-                
-                if(IsDefined(powerups) && powerups.size)
-                {
-                    self addOptSlider("Spawn Location", &PowerUpSpawnLocation, Array("Crosshairs", "Self"));
-                    self addOpt("");
-
-                    for(a = 0; a < powerups.size; a++)
-                    {
-                        if(IsDefined(powerups[a]))
-                            self addOpt(ReturnPowerupName(powerups[a]), &SpawnPowerUp, powerups[a]);
-                    }
-                }
-            break;
-    }
-}
-
-function PowerUpSpawnLocation(location)
-{
-    self.PowerUpSpawnLocation = location;
-}
-
-function SpawnPowerUp(powerup, origin)
-{
-    if(!IsDefined(origin))
-    {
-        if(IsDefined(self.PowerUpSpawnLocation) && IsString(self.PowerUpSpawnLocation) && self.PowerUpSpawnLocation == "Self")
-        {
-            origin = self.origin;
-        }
-        else
-        {
-            start = self GetWeaponMuzzlePoint();
-
-            if(!IsDefined(start) || !IsVec(start))
-                start = self GetEye();
-            
-            trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
-            origin = trace["position"];
-            surface = trace["surfacetype"];
-
-            if(IsDefined(surface) && (surface == "none" || surface == "default"))
-                return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-        }
-    }
-    
-    drop = level zm_powerups::specific_powerup_drop(powerup, origin);
-
-    if(IsDefined(level.powerup_drop_count) && level.powerup_drop_count)
-        level.powerup_drop_count--;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//server_tweakables.gsc
-function PopulateServerTweakables(menu)
-{
-    switch(menu)
-    {
-        case "Server Tweakables":
-            MenuPerks = [];
-            perks = GetArrayKeys(level._custom_perks);
-
-            for(a = 0; a < perks.size; a++)
-                array::add(MenuPerks, perks[a], 0);
-
-            self addMenu(menu);
-                self addOpt("Edit Power-Ups", &newMenu, "Edit Power-Ups");
-                self addOptIncSlider("Pack 'a' Punch Camo Index", &SetPackCamoIndex, 0, level.pack_a_punch_camo_index, 138, 1);
-                self addOptIncSlider("Player Weapon Limit", &SetPlayerWeaponLimit, 2, 2, 15, 1);
-                self addOptIncSlider("Player Perk Limit", &SetPlayerPerkLimit, 0, 0, MenuPerks.size, 1);
-                self addOptIncSlider("Clip Size Multiplier", &ServerSetClipSizeMultiplier, 1, 1, 10, 1);
-                self addOptIncSlider("Revive Trigger Radius", &ServerSetReviveRadius, 0, GetDvarInt("revive_trigger_radius"), 1000, 25);
-                self addOptIncSlider("Last Stand Bleedout Time", &ServerSetLastandTime, 0, GetDvarInt("player_lastStandBleedoutTime"), 1000, 1);
-                self addOptBool((level.zombie_vars["zombie_between_round_time"] == 0.1), "Fast Round Intermission", &FastRoundIntermission);
-                self addOptBool(level.UpgradeWeaponWallbuys, "Upgrade Weapon Wallbuys", &ServerUpgradeWeaponWallbuys);
-                self addOptBool(level.ServerMaxAmmoClips, "Max Ammo Powerups Fill Clips", &ServerMaxAmmoClips);
-                self addOptBool(level.ShootToRevive, "Shoot To Revive", &ShootToRevive);
-                self addOptBool(level.headshots_only, "Headshots Only", &headshots_only);
-                self addOpt("Pack 'a' Punch Price", &NumberPad, &EditPackAPunchPrice);
-                self addOpt("Repack 'a' Punch Price", &NumberPad, &EditRepackAPunchPrice);
-            break;
-        
-        case "Edit Power-Ups":
-            powerups = GetArrayKeys(level.zombie_include_powerups);
-
-            self addMenu(menu);
-                self addOptBool(level.DisablePowerups, "Disable Power-Ups", &DisablePowerups);
-                self addOptBool(level.IncreasedDropRate, "Increased Power-Up Drop Rate", &IncreasedDropRate);
-                self addOptBool(level.PowerupsNeverLeave, "Power-Ups Never Leave", &PowerupsNeverLeave);
-
-                for(a = 0; a < powerups.size; a++)
-                {
-                    if(!IsDefined(powerups[a]) || !IsDefined(level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups) || !IsFunctionPtr(level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups))
-                        continue;
-                    
-                    self addOptBool([[ level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups ]](), ReturnPowerupName(powerups[a]), &SetPowerUpState, powerups[a]);
-                }
-            break;
-    }
-}
-
-function SetPowerUpState(powerup)
-{
-    if(!IsDefined(powerup) || !IsDefined(level.zombie_powerups[powerup].func_should_drop_with_regular_powerups) || !IsFunctionPtr(level.zombie_powerups[powerup].func_should_drop_with_regular_powerups))
-        return;
-    
-    if(GetActivePowerUpCount() < 2 && Is_True([[ level.zombie_powerups[powerup].func_should_drop_with_regular_powerups ]]()))
-        return self iPrintlnBold("^1ERROR: ^7At Least One Power-Up Must Be Enabled");
-    
-    level.zombie_powerups[powerup].func_should_drop_with_regular_powerups = (Is_True([[ level.zombie_powerups[powerup].func_should_drop_with_regular_powerups ]]()) ? &zm_powerups::func_should_never_drop : &zm_powerups::func_should_always_drop);
-}
-
-function GetActivePowerUpCount()
-{
-    index = 0;
-    powerups = GetArrayKeys(level.zombie_include_powerups);
-
-    for(a = 0; a < powerups.size; a++)
-    {
-        if(!IsDefined(powerups[a]))
-            continue;
-        
-        if(Is_True([[ level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups ]]()))
-            index++;
-    }
-
-    return index;
-}
-
-function SetPackCamoIndex(index)
-{
-    level.pack_a_punch_camo_index = index;
-}
-
-function SetPlayerWeaponLimit(limit)
-{
-    level.CustomPlayerWeaponLimit = limit;
-    level.additionalprimaryweapon_limit = limit;
-
-    foreach(player in level.players)
-    {
-        if(IsDefined(player.get_player_weapon_limit))
-            player.get_player_weapon_limit = &GetPlayerWeaponLimit;
-    }
-
-    level.get_player_weapon_limit = &GetPlayerWeaponLimit;
-}
-
-function GetPlayerWeaponLimit(player)
-{
-    return level.CustomPlayerWeaponLimit;
-}
-
-function SetPlayerPerkLimit(limit)
-{
-    level.CustomPerkLimit = limit;
-    level.perk_purchase_limit = limit;
-    level.get_player_perk_purchase_limit = &GetPlayerPerkLimit;
-}
-
-function GetPlayerPerkLimit(player)
-{
-    return level.CustomPerkLimit;
-}
-
-function ServerSetClipSizeMultiplier(multiplier)
-{
-    SetDvar("player_clipSizeMultiplier", multiplier);
-}
-
-function ServerSetReviveRadius(radius)
-{
-    SetDvar("revive_trigger_radius", radius);
-}
-
-function ServerSetLastandTime(time)
-{
-    SetDvar("player_lastStandBleedoutTime", time);
-}
-
-function FastRoundIntermission()
-{
-    level.zombie_vars["zombie_between_round_time"] = ((level.zombie_vars["zombie_between_round_time"] == 0.1 ? level.roundIntermissionTime : 0.1));
-}
-
-function ServerUpgradeWeaponWallbuys()
-{
-    level.UpgradeWeaponWallbuys = BoolVar(level.UpgradeWeaponWallbuys);
-
-    if(Is_True(level.UpgradeWeaponWallbuys))
-    {
-        if(IsDefined(level.wallbuy_should_upgrade_weapon_override))
-            level.saved_wallbuy_should_upgrade_weapon_override = level.wallbuy_should_upgrade_weapon_override;
-        
-        level.wallbuy_should_upgrade_weapon_override = &wallbuy_should_upgrade_weapon_override;
-    }
-    else
-    {
-        level.wallbuy_should_upgrade_weapon_override = ((IsDefined(level.saved_wallbuy_should_upgrade_weapon_override) ? level.saved_wallbuy_should_upgrade_weapon_override : undefined));
-    }
-}
-
-function ServerMaxAmmoClips()
-{
-    level.ServerMaxAmmoClips = BoolVar(level.ServerMaxAmmoClips);
-
-    if(Is_True(level.ServerMaxAmmoClips))
-    {
-        level thread WatchForMaxAmmo();
-    }
-    else
-    {
-        level.WatchForMaxAmmo = undefined;
-        level notify("EndMaxAmmoMonitor");
-    }
-}
-
-function IncreasedDropRate()
-{
-    if(Is_True(level.DisablePowerups) && !Is_True(level.IncreasedDropRate))
-        level DisablePowerups();
-
-    level.IncreasedDropRate = BoolVar(level.IncreasedDropRate);
-
-    if(Is_True(level.IncreasedDropRate))
-    {
-        if(!IsDefined(level.original_powerup_drop_max))
-            level.original_powerup_drop_max = level.zombie_vars["zombie_powerup_drop_max_per_round"];
-
-        while(Is_True(level.IncreasedDropRate))
-        {
-            level.powerup_drop_count = 0;
-
-            if(level.zombie_vars["zombie_drop_item"] != 1)
-                level.zombie_vars["zombie_drop_item"] = 1;
-
-            if(level.zombie_vars["zombie_powerup_drop_max_per_round"] != 999)
-                level.zombie_vars["zombie_powerup_drop_max_per_round"] = 999;
-
-            zombies = GetAITeamArray(level.zombie_team);
-
-            for(a = 0; a < zombies.size; a++)
-            {
-                if(IsDefined(zombies[a]) && (!IsDefined(zombies[a].no_powerup) || zombies[a].no_powerup))
-                    zombies[a].no_powerup = false;
-            }
-
-            wait 0.01;
-        }
-    }
-    else if(IsDefined(level.original_powerup_drop_max))
-    {
-        level.zombie_vars["zombie_powerup_drop_max_per_round"] = level.original_powerup_drop_max;
-    }
-}
-
-function PowerupsNeverLeave()
-{
-    level.PowerupsNeverLeave = BoolVar(level.PowerupsNeverLeave);
-    level._powerup_timeout_override = ((Is_True(level.PowerupsNeverLeave) ? PowerUpTime() : undefined));
-}
-
-function PowerUpTime()
-{
-    return 0;
-}
-
-function DisablePowerups()
-{
-    if(Is_True(level.IncreasedDropRate) && !Is_True(level.DisablePowerups))
-        level IncreasedDropRate();
-    
-    level.DisablePowerups = BoolVar(level.DisablePowerups);
-
-    if(Is_True(level.DisablePowerups))
-    {
-        powerups = zm_powerups::get_powerups(self.origin, 46340); //active powerups array is being weird and not returning all of the active powerups? -- distancesquared(origin, powerup.origin) < (radius * radius) -- 46340.50 is sqrt of int max
-
-        if(IsDefined(powerups) && powerups.size)
-        {
-            foreach(index, powerup in powerups)
-            {
-                powerup notify("powerup_timedout");
-                powerup zm_powerups::powerup_delete();
-
-                wait 0.01;
-            }
-        }
-        
-        while(Is_True(level.DisablePowerups))
-        {
-            level waittill("powerup_dropped", powerup);
-            
-            if(IsDefined(powerup))
-            {
-                powerup notify("powerup_timedout");
-                powerup thread zm_powerups::powerup_delete();
-            }
-        }
-    }
-    else
-    {
-        level.powerup_drop_count = 0;
-    }
-}
-
-function ShootToRevive()
-{
-    level.ShootToRevive = BoolVar(level.ShootToRevive);
-
-    if(Is_True(level.ShootToRevive))
-    {
-        foreach(player in level.players)
-            player thread PlayerShootToRevive();
-    }
-    else
-    {
-        level notify("EndShootToRevive");
-    }
-}
-
-function PlayerShootToRevive()
-{
-    self endon("disconnect");
-    level endon("EndShootToRevive");
-
-    while(Is_True(level.ShootToRevive))
-    {
-        self waittill("weapon_fired");
-
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), true, self);
-
-        traceEntity = trace["entity"];
-        tracePosition = trace["position"];
-
-        if(!IsDefined(traceEntity) || !IsPlayer(traceEntity))
-        {
-            foreach(player in level.players)
-            {
-                if(player == self || !Is_Alive(player) || !player IsDown() || Distance(tracePosition, player.origin) > 50)
-                    continue;
-                
-                self thread PlayerShootRevive(player);
-            }
-        }
-        else
-        {
-            if(!Is_Alive(traceEntity) || !traceEntity IsDown())
-                continue;
-            
-            self thread PlayerShootRevive(traceEntity);
-        }
-    }
-}
-
-function PlayerShootRevive(player)
-{
-    if(!IsDefined(player) || !IsPlayer(player))
-        return;
-    
-    if(IsDefined(self.hud_damagefeedback))
-        self zombie_utility::show_hit_marker();
-
-    self PlayerRevive(player);
-}
-
-function headshots_only()
-{
-    level.headshots_only = BoolVar(level.headshots_only);
-}
-
-function EditPackAPunchPrice(price)
-{
-    if(!IsDefined(level.pack_a_punch))
-        return;
-    
-    vending_weapon_upgrade_trigger = level.pack_a_punch.triggers;
-
-    if(IsDefined(vending_weapon_upgrade_trigger) && vending_weapon_upgrade_trigger.size >= 1)
-    {
-        foreach(index, trigger in vending_weapon_upgrade_trigger)
-            trigger.cost = price;
-    }
-}
-
-function EditRepackAPunchPrice(price)
-{
-    if(!IsDefined(level.pack_a_punch))
-        return;
-    
-    vending_weapon_upgrade_trigger = level.pack_a_punch.triggers;
-
-    if(IsDefined(vending_weapon_upgrade_trigger) && vending_weapon_upgrade_trigger.size >= 1)
-    {
-        foreach(index, trigger in vending_weapon_upgrade_trigger)
-            trigger.aat_cost = price;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//server.gsc
-function PopulateServerModifications(menu)
-{
-    switch(menu)
-    {
-        case "Server Modifications":
-            self addMenu(menu);
-                self addOptBool(level.SuperJump, "Super Jump", &SuperJump);
-                self addOptBool((GetDvarInt("bg_gravity") == 200), "Low Gravity", &LowGravity);
-                self addOptBool((GetDvarString("g_speed") == "500"), "Super Speed", &SuperSpeed);
-                self addOptIncSlider("Timescale", &ServerSetTimeScale, 0.5, GetDvarInt("timescale"), 5, 0.5);
-                self addOpt("Set Round", &newMenu, "Set Round");
-                self addOpt("Anti-Join", &newMenu, "Anti-Join");
-                self addOptBool(level.AntiQuit, "Anti-Quit", &AntiQuit);
-                self addOptBool(level.AutoRevive, "Auto-Revive", &AutoRevive);
-                self addOptBool(level.AutoRespawn, "Auto-Respawn", &AutoRespawn);
-                self addOptBool(level.bzm_worldPaused, "Pause World", &ServerPauseWorld);
-                self addOptBool(level.Newsbar, "Newsbar", &Newsbar);
-                self addOpt("Doheart Options", &newMenu, "Doheart Options");
-                self addOpt("Lobby Timer Options", &newMenu, "Lobby Timer Options");
-
-                if(!IsVerkoMap() && IsDefined(level.chests) && level.chests.size)
-                    self addOpt("Mystery Box Options", &newMenu, "Mystery Box Options");
-                
-                self addOptBool(IsAllDoorsOpen(), "Open All Doors & Debris", &OpenAllDoors);
-                self addOptSlider("Zombie Barriers", &SetZombieBarrierState, Array("Break All", "Repair All"));
-                self addOpt("Spawn Bot", &SpawnBot);
-
-                if(IsDefined(level.zombie_include_craftables) && level.zombie_include_craftables.size && !IsDefined(level.all_parts_required))
-                {
-                    if(level.zombie_include_craftables.size > 1 || level.zombie_include_craftables.size && GetArrayKeys(level.zombie_include_craftables)[0] != "open_table")
-                        self addOpt("Craftables", &newMenu, "Zombie Craftables");
-                }
-
-                if(IsDefined(level.menu_traps) && level.menu_traps.size)
-                    self addOpt("Zombie Traps", &newMenu, "Zombie Traps");
-                
-                self addOpt("Change Map", &newMenu, "Change Map");
-                self addOpt("Restart Game", &ServerRestartGame);
-            break;
-        
-        case "Set Round":
-            self addMenu(menu);
-                self addOpt("Custom", &NumberPad, &SetRound);
-                self addOpt("Next Round", &SetRound, "Next");
-                self addOpt("Previous Round", &SetRound, "Previous");
-            break;
-        
-        case "Anti-Join":
-            if(!IsDefined(level.antiJoinPassword))
-                level.antiJoinPassword = "";
-
-            password = (((level.antiJoinPassword == "") ? "^1Not Set" : level.antiJoinPassword));
-
-            self addMenu(menu);
-                self addOptBool(level.antiJoin, "Anti-Join", &AntiJoin);
-                self addOpt("ClanTag Password: " + password, &Keyboard, &SetAntiJoinPassword);
-                self addOpt("Clear Password", &ClearAntiJoinPassword);
-            break;
-        
-        case "Doheart Options":
-            if(!IsDefined(level.DoheartStyle))
-                level.DoheartStyle = "Pulsing";
-            
-            if(!IsDefined(level.DoheartSavedText))
-                level.DoheartSavedText = CleanName(bot::get_host_player() getName());
-            
-            self addMenu(menu);
-                self addOptBool(level.Doheart, "Doheart", &Doheart);
-                self addOptSlider("Text", &DoheartTextPass, Array(CleanName(bot::get_host_player() getName()), GetMenuName(), "CF4_99", "discord.gg/apparitionbo3", "Custom"));
-                self addOptSlider("Style", &SetDoheartStyle, Array("Pulsing", "Pulse Effect", "Type Writer", "Moving", "Fade Effect"));
-            break;
-        
-        case "Lobby Timer Options":
-            if(!IsDefined(level.LobbyTime))
-                level.LobbyTime = 10;
-            
-            self addMenu(menu);
-                self addOptBool(level.LobbyTimer, "Lobby Timer", &LobbyTimer);
-                self addOptIncSlider("Set Lobby Timer", &SetLobbyTimer, 1, 10, 30, 1);
-            break;
-        
-        case "Mystery Box Options":
-            self addMenu(menu);
-                self addOptBool(level.DisableMysteryBox, "Disable", &DisableMysteryBox);
-                self addOptBool(level.chests[level.chest_index].old_cost != 950, "Custom Price", &NumberPad, &SetBoxPrice);
-                self addOptBool((GetDvarString("magic_chest_movable") == "0"), "Never Moves", &BoxNeverMoves);
-                self addOptBool(AllBoxesActive(), "Show All", &ShowAllChests);
-                self addOpt("Force Joker", &BoxForceJoker);
-                self addOpt("Joker Model", &newMenu, "Joker Model");
-                self addOpt("Weapons", &newMenu, "Mystery Box Weapons");
-            break;
-        
-        case "Mystery Box Weapons":
-            self addMenu("Weapons");
-                self addOpt("Normal", &newMenu, "Mystery Box Normal Weapons");
-                self addOpt("Upgraded", &newMenu, "Mystery Box Upgraded Weapons");
-            break;
-        
-        case "Mystery Box Normal Weapons":
-        case "Mystery Box Upgraded Weapons":
-            arr = [];
-
-            if(menu == "Mystery Box Normal Weapons")
-            {
-                upgraded = false;
-                titleString = "Normal Weapons";
-                type = level.zombie_weapons;
-            }
-            else
-            {
-                upgraded = true;
-                titleString = "Upgraded Weapons";
-                type = level.zombie_weapons_upgraded;
-            }
-
-            weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
-            weaps = GetArrayKeys(type);
-
-            self addMenu(titleString);
-                self addOptBool(IsAllWeaponsInBox(upgraded), "Enable All", &EnableAllWeaponsInBox, upgraded);
-
-                if(IsDefined(weaps) && weaps.size)
-                {
-                    for(a = 0; a < weaps.size; a++)
-                    {
-                        if(menu == "Mystery Box Normal Weapons" && IsSubStr(weaps[a].name, "upgraded"))
-                            continue;
-
-                        if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
-                        {
-                            strng = (((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name));
-
-                            if(!IsInArray(arr, strng))
-                            {
-                                arr[arr.size] = strng;
-                                self addOptBool(IsWeaponInBox(weaps[a]), strng, &SetBoxWeaponState, weaps[a]);
-                            }
-                        }
-                    }
-                }
-
-                if(menu == "Mystery Box Normal Weapons")
-                {
-                    equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
-                    keys = GetArrayKeys(equipment);
-
-                    self addOptBool(IsWeaponInBox(GetWeapon("minigun")), "Death Machine", &SetBoxWeaponState, GetWeapon("minigun"));
-                    self addOptBool(IsWeaponInBox(GetWeapon("defaultweapon")), "Default Weapon", &SetBoxWeaponState, GetWeapon("defaultweapon"));
-
-                    if(IsDefined(keys) && keys.size)
-                    {
-                        foreach(index, weapon in GetArrayKeys(level.zombie_weapons))
-                        {
-                            if(isInArray(equipment, weapon))
-                                self addOptBool(IsWeaponInBox(weapon), weapon.displayname, &SetBoxWeaponState, weapon);
-                        }
-                    }
-                }
-            break;
-        
-        case "Joker Model":
-            self addMenu(menu);
-                self addOptBool((level.chest_joker_model == level.saved_jokerModel), "Reset", &SetBoxJokerModel, level.saved_jokerModel);
-                self addOpt("");
-
-                for(a = 0; a < level.menu_models.size; a++)
-                    self addOptBool((level.chest_joker_model == level.menu_models[a]), CleanString(level.menu_models[a]), &SetBoxJokerModel, level.menu_models[a]);
-            break;
-        
-        case "Zombie Craftables":
-            craftables = GetArrayKeys(level.zombie_include_craftables);
-
-            self addMenu("Craftables");
-
-                if(!IsAllCraftablesCollected())
-                {
-                    self addOpt("Collect All", &CollectAllCraftables);
-                    self addOpt("");
-                }
-
-                for(a = 0; a < craftables.size; a++)
-                {
-                    if(IsCraftableCollected(craftables[a]) || craftables[a] == "open_table" || IsSubStr(craftables[a], "ritual_") || IsSubStr(craftables[a], "wafflesniper"))
-                        continue;
-                    
-                    self addOpt(CleanString(craftables[a]), &newMenu, craftables[a]);
-                }
-            break;
-        
-        case "Zombie Traps":
-            self addMenu(menu);
-
-                if(IsDefined(level.menu_traps) && level.menu_traps.size)
-                {
-                    self addOpt("Activate All Traps", &ActivateAllZombieTraps);
-
-                    for(a = 0; a < level.menu_traps.size; a++)
-                    {
-                        if(IsDefined(level.menu_traps[a]))
-                            self addOpt((IsDefined(level.menu_traps[a].prefabname) ? CleanString(level.menu_traps[a].prefabname) : "Trap " + (a + 1)), &ActivateZombieTrap, a);
-                    }
-                }
-            break;
-        
-        case "Change Map":
-            mapNames = Array("zm_zod", "zm_factory", "zm_castle", "zm_island", "zm_stalingrad", "zm_genesis", "zm_prototype", "zm_asylum", "zm_sumpf", "zm_theater", "zm_cosmodrome", "zm_temple", "zm_moon", "zm_tomb");
-
-            self addMenu(menu);
-
-                for(a = 0; a < mapNames.size; a++)
-                    self addOptBool((level.script == mapNames[a]), ReturnMapName(mapNames[a]), &ServerChangeMap, mapNames[a]);
-            break;
-    }
-}
-
-function SuperJump()
-{
-    level.SuperJump = BoolVar(level.SuperJump);
-    SetJumpHeight((Is_True(level.SuperJump) ? 1023 : 39));
-}
-
-function LowGravity()
-{
-    SetDvar("bg_gravity", ((GetDvarInt("bg_gravity") == level.BgGravity) ? 200 : level.BgGravity));
-}
-
-function SuperSpeed()
-{
-    SetDvar("g_speed", ((GetDvarString("g_speed") == level.GSpeed) ? "500" : level.GSpeed));
-}
-
-function ServerSetTimeScale(timescale)
-{
-    if(GetDvarFloat("timescale") == timescale)
-        return;
-    
-    SetDvar("timescale", timescale);
-}
-
-function ChangeRoundValidation()
-{
-    if(!level flag::get("spawn_zombies"))
-        return false;
-
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(!IsDefined(zombies) || zombies.size < 1)
-        return false;
-
-    if(IsDefined(level.var_35efa94c))
-    {
-        if(![[ level.var_35efa94c ]]())
-            return false;
-    }
-
-    if(Is_True(level.var_dfd95560))
-        return false;
-
-    return true;
-}
-
-function SetRound(round = 1)
-{
-    if(!ChangeRoundValidation())
-        return self iPrintlnBold("^1ERROR: ^7You Can't Change The Round Right Now");
-    
-    if(Is_True(level.var_dfd95560))
-        return self iPrintlnBold("^1ERROR: ^7The Round Is Already Being Changed");
-    
-    if(IsString(round))
-    {
-        if(round == "Previous")
-            round = level.round_number - 1;
-        else
-            round = level.round_number + 1;
-    }
-
-    level.var_dfd95560 = true;
-    round--;
-
-    if(round >= 255 || round <= 0)
-        round = (((round >= 255) ? 254 : 0));
-    
-    level.zombie_total = 0;
-    zombie_utility::ai_calculate_health(round);
-
-    level.round_number = (round - 1);
-    world.roundnumber = (round ^ 115);
-    SetRoundsPlayed(round);
-
-    level notify("kill_round");
-    PlaySoundAtPosition("zmb_bgb_round_robbin", (0, 0, 0));
-    wait 0.1;
-
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    if(IsDefined(zombies))
-    {
-        e_last = undefined;
-
-        foreach(zombie in zombies)
-        {
-            if(IsDefined(zombie))
-                e_last = zombie;
-        }
-
-        if(IsDefined(e_last))
-        {
-            level.last_ai_origin = e_last.origin;
-            level notify("last_ai_down", e_last);
-        }
-    }
-
-    util::wait_network_frame();
-
-    if(IsDefined(zombies))
-    {
-        foreach(zombie in zombies)
-        {
-            if(!IsDefined(zombie))
-                continue;
-
-            zombie DoDamage(zombie.health + 666, zombie.origin);
-        }
-    }
-    
-    level.var_dfd95560 = undefined;
-}
-
-function AntiJoin()
-{
-    level.antiJoin = BoolVar(level.antiJoin);
-
-    value = ((Is_True(level.antiJoin) ? "1" : "0"));
-    SetDvar("antiJoin", "" + value);
-}
-
-function SetAntiJoinPassword(password = "")
-{
-    if(password == level.antiJoinPassword)
-        return;
-    
-    if(password.size > 4)
-        return self iPrintlnBold("^1ERROR: ^7Password Can't Be Greater Than 4 Chars");
-    
-    level.antiJoinPassword = password;
-    SetDvar("antiJoinPassword", password);
-}
-
-function ClearAntiJoinPassword()
-{
-    level.antiJoinPassword = "";
-    SetDvar("antiJoinPassword", "");
-    self RefreshMenu(self getCurrent(), self getCursor());
-}
-
-function AntiQuit()
-{
-    level.AntiQuit = BoolVar(level.AntiQuit);
-    SetMatchFlag("disableIngameMenu", Is_True(level.AntiQuit));
-}
-
-function AutoRevive()
-{
-    level endon("game_ended");
-
-    level.AutoRevive = BoolVar(level.AutoRevive);
-
-    while(Is_True(level.AutoRevive))
-    {
-        foreach(player in level.players)
-        {
-            if(IsDefined(player) && player isDown())
-                player thread PlayerRevive(player);
-        }
-
-        wait 0.1;
-    }
-}
-
-function AutoRespawn()
-{
-    level endon("game_ended");
-    
-    level.AutoRespawn = BoolVar(level.AutoRespawn);
-    
-    while(Is_True(level.AutoRespawn))
-    {
-        foreach(player in level.players)
-        {
-            if(IsDefined(player) && !Is_Alive(player))
-                player thread ServerRespawnPlayer(player);
-        }
-
-        wait 0.1;
-    }
-}
-
-function ServerPauseWorld()
-{
-    if(!Is_True(level.bzm_worldPaused))
-    {
-        level.bzm_worldPaused = true;
-        level flag::set("world_is_paused");
-    }
-    else
-    {
-        level.bzm_worldPaused = false;
-        level flag::clear("world_is_paused");
-    }
-
-    SetPauseWorld(level.bzm_worldPaused);
-}
-
-function Newsbar()
-{
-    level.Newsbar = BoolVar(level.Newsbar);
-
-    if(Is_True(level.Newsbar))
-    {
-        level endon("EndNewsBar");
-
-        level.NewsbarBG = level createServerRectangle("CENTER", "CENTER", 0, -232, 5000, 18, (0, 0, 0), 1, 0.6, "white");
-        level.NewsbarText = level createServerText("default", 1, 3, "", "CENTER", "CENTER", 0, -255, 1, (1, 1, 1));
-        
-        strings = Array("Welcome To ^1" + GetMenuName() + " ^7Developed By ^2CF4_99", "Your Host Today Is ^6" + CleanName(bot::get_host_player() getName()), "[{+speed_throw}] & [{+melee}] To Open ^1" + GetMenuName(), "YouTube.Com/^3CF4_99", "Discord.gg/^6apparitionbo3", "^5Enjoy Your Stay!");
-        
-        while(Is_True(level.Newsbar))
-        {
-            for(a = 0; a < strings.size; a++)
-            {
-                if(IsDefined(level.NewsbarText))
-                {
-                    level.NewsbarText SetTextString(strings[a]);
-                    level.NewsbarText hudMoveY(-232, 0.55);
-                    level.NewsbarText ChangeFontscaleOverTime1(1.2, 0.75);
-                    wait 5;
-                }
-                
-                if(IsDefined(level.NewsbarText))
-                {
-                    level.NewsbarText ChangeFontscaleOverTime1(1, 0.3);
-                    wait 0.3;
-                }
-                
-                if(IsDefined(level.NewsbarText))
-                {
-                    level.NewsbarText thread hudMoveY(-255, 0.55);
-                    wait 0.55;
-                }
-            }
-        }
-    }
-    else
-    {
-        if(IsDefined(level.NewsbarBG))
-            level.NewsbarBG destroy();
-        
-        if(IsDefined(level.NewsbarText))
-            level.NewsbarText destroy();
-        
-        level notify("EndNewsBar");
-    }
-}
-
-function Doheart()
-{
-    level.Doheart = BoolVar(level.Doheart);
-    
-    if(Is_True(level.Doheart))
-    {
-        level thread SetDoheartText(level.DoheartSavedText, true);
-    }
-    else
-    {
-        if(IsDefined(level.DoheartText))
-            level.DoheartText destroy();
-    }
-}
-
-function SetDoheartText(text, refresh)
-{
-    if(level.DoheartSavedText == text && (!IsDefined(refresh) || !refresh))
-        return;
-    
-    level.DoheartSavedText = text;
-
-    if(!Is_True(level.Doheart) || !IsDefined(text))
-        return;
-    
-    if(IsDefined(level.DoheartText))
-        level.DoheartText destroy();
-
-    level.DoheartText = level createServerText("objective", 2, 1, "", "CENTER", "CENTER", 0, -215, 1, (1, 1, 1));
-    
-    switch(level.DoheartStyle)
-    {
-        case "Pulsing":
-            level thread PulsingText(level.DoheartSavedText, level.DoheartText);
-            break;
-        
-        case "Pulse Effect":
-            level thread PulseFXText(level.DoheartSavedText, level.DoheartText);
-            break;
-        
-        case "Type Writer":
-            level thread TypeWriterFXText(level.DoheartSavedText, level.DoheartText);
-            break;
-        
-        case "Moving":
-            level thread RandomPosText(level.DoheartSavedText, level.DoheartText);
-            break;
-        
-        case "Fade Effect":
-            level thread FadingTextEffect(level.DoheartSavedText, level.DoheartText);
-            break;
-        
-        default:
-            break;
-    }
-}
-
-function DoheartTextPass(strng)
-{
-    if(strng != "Custom")
-        self thread SetDoheartText(strng);
-    else
-        self Keyboard(&SetDoheartText);
-}
-
-function SetDoheartStyle(style)
-{
-    if(level.DoheartStyle == style)
-        return;
-    
-    level.DoheartStyle = style;
-
-    if(Is_True(level.Doheart) && IsDefined(level.DoheartSavedText))
-        level thread SetDoheartText(level.DoheartSavedText, true);
-}
-
-function LobbyTimer()
-{
-    level.LobbyTimer = BoolVar(level.LobbyTimer);
-
-    if(Is_True(level.LobbyTimer))
-    {
-        level endon("EndLobbyTimer");
-
-        foreach(player in level.players)
-        {
-            player.LobbyTimer = player OpenLUIMenu("HudElementTimer", true);
-
-            player SetLUIMenuData(player.LobbyTimer, "x", 25);
-            player SetLUIMenuData(player.LobbyTimer, "y", 600);
-            player SetLUIMenuData(player.LobbyTimer, "height", 28);
-            player SetLUIMenuData(player.LobbyTimer, "time", (GetTime() + ((level.LobbyTime * 60) * 1000)));
-        }
-
-        wait (level.LobbyTime * 60);
-
-        foreach(player in level.players)
-        {
-            if(IsDefined(player) && IsDefined(player.LobbyTimer))
-                player CloseLUIMenu(player.LobbyTimer);
-        }
-        
-        if(Is_True(level.AntiEndGame))
-            level AntiEndGame();
-        
-        level thread globallogic::forceend();
-    }
-    else
-    {
-        foreach(player in level.players)
-        {
-            if(IsDefined(player.LobbyTimer))
-                player CloseLUIMenu(player.LobbyTimer);
-        }
-
-        level notify("EndLobbyTimer");
-    }
-}
-
-function SetLobbyTimer(time)
-{
-    if(time <= 0)
-        return self iPrintln("^1ERROR: ^7Lobby Timer Must Be Greater Than 0");
-
-    level.LobbyTime = time;
-
-    if(Is_True(level.LobbyTimer))
-    {
-        for(a = 0; a < 2; a++)
-            LobbyTimer();
-    }
-}
-
-function DisableMysteryBox()
-{
-    level.DisableMysteryBox = BoolVar(level.DisableMysteryBox);
-
-    foreach(chest in level.chests)
-    {
-        if(!IsDefined(chest) || !IsDefined(chest.unitrigger_stub))
-            continue;
-        
-        if(Is_True(level.DisableMysteryBox))
-        {
-            if(IsDefined(chest.unitrigger_stub.prompt_and_visibility_func))
-                chest.savedFunction = chest.unitrigger_stub.prompt_and_visibility_func;
-            
-            chest.unitrigger_stub.prompt_and_visibility_func = &overrideChestFunction;
-        }
-        else
-        {
-            if(IsDefined(chest.savedFunction))
-                chest.unitrigger_stub.prompt_and_visibility_func = chest.savedFunction;
-        }
-    }
-}
-
-function overrideChestFunction(player)
-{
-    return false;
-}
-
-function SetBoxPrice(price)
-{
-    foreach(chest in level.chests)
-    {
-        chest.old_cost = price;
-        
-        if(!Is_True(level.zombie_vars["zombie_powerup_fire_sale_on"]))
-            chest.zombie_cost = price;
-    }
-}
-
-function BoxNeverMoves()
-{
-    if(AllBoxesActive())
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option While All Mystery Boxes Are Active");
-    
-    SetDvar("magic_chest_movable", ((GetDvarString("magic_chest_movable") == "1") ? "0" : "1"));
-}
-
-function ShowAllChests()
-{
-    if(Is_True(level.ShowAllChestsWaiting))
-        return;
-    level.ShowAllChestsWaiting = true;
-
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    if(!AllBoxesActive())
-    {
-        foreach(chest in level.chests)
-        {
-            if(chest.hidden)
-                chest thread zm_magicbox::show_chest();
-            
-            chest thread TriggerFix();
-            chest thread FirsaleFix();
-        }
-        
-        SetDvar("magic_chest_movable", "0");
-
-        while(!AllBoxesActive())
-            wait 0.1;
-        
-        self RefreshMenu(menu, curs);
-
-        if(Is_True(level.ShowAllChestsWaiting))
-            level.ShowAllChestsWaiting = BoolVar(level.ShowAllChestsWaiting);
-    }
-    else
-    {
-        foreach(chest in level.chests)
-        {
-            if(!chest.hidden && chest != level.chests[level.chest_index])
-            {
-                chest.was_temp = true;
-                chest zm_magicbox::hide_chest();
-            }
-            
-            chest notify("EndBoxFixes");
-        }
-        
-        SetDvar("magic_chest_movable", "1");
-
-        while(AllBoxesActive())
-            wait 0.1;
-        
-        self RefreshMenu(menu, curs);
-        
-        if(Is_True(level.ShowAllChestsWaiting))
-            level.ShowAllChestsWaiting = BoolVar(level.ShowAllChestsWaiting);
-    }
-}
-
-function TriggerFix()
-{
-    self endon("EndBoxFixes");
-
-    if(!IsDefined(self.zbarrier))
-        return;
-    
-    while(IsDefined(self))
-    {
-        self.zbarrier waittill("closed");
-        thread zm_unitrigger::register_static_unitrigger(self.unitrigger_stub, &zm_magicbox::magicbox_unitrigger_think);
-    }
-}
-
-function FirsaleFix()
-{
-    self endon("EndBoxFixes");
-    
-    while(IsDefined(self))
-    {
-        level waittill("fire_sale_off");
-        self.was_temp = undefined;
-    }
-}
-
-function AllBoxesActive()
-{
-    foreach(chest in level.chests)
-    {
-        if(Is_True(chest.hidden))
-            return false;
-    }
-    
-    return true;
-}
-
-function BoxForceJoker()
-{
-    if(AllBoxesActive())
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option While All Mystery Boxes Are Active");
-    
-    SetDvar("magic_chest_movable", "1");
-    level.chest_accessed = 999;
-    level.chest_moves = 0;
-
-    self RefreshMenu(self getCurrent(), self getCursor()); //Needs to refresh the menu since 'magic_chest_movable' is a dvar used as a bool option
-}
-
-function SetBoxJokerModel(model)
-{
-    level.chest_joker_model = model;
-}
-
-function SetBoxWeaponState(weapon)
-{
-    if(!IsDefined(level.custom_boxWeapons))
-        return;
-    
-    if(isInArray(level.custom_boxWeapons, weapon))
-        level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, weapon);
-    else
-        level.custom_boxWeapons[level.custom_boxWeapons.size] = weapon;
-    
-    level.CustomRandomWeaponWeights = &CustomBoxWeight;
-}
-
-function IsAllWeaponsInBox(upgraded = false)
-{
-    weaps = ((upgraded ? GetArrayKeys(level.zombie_weapons_upgraded) : GetArrayKeys(level.zombie_weapons)));
-    weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
-    
-    for(a = 0; a < weaps.size; a++)
-    {
-        if(IsInArray(weaponsVar, ToLower(CleanString((upgraded ? zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a])) : zm_utility::GetWeaponClassZM(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none" && !IsWeaponInBox(weaps[a]))
-            return false;
-    }
-    
-    if(!upgraded)
-    {
-        equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
-        equipmentCombined = GetArrayKeys(equipment);
-
-        if(!IsWeaponInBox(GetWeapon("minigun")) || !IsWeaponInBox(GetWeapon("defaultweapon")))
-            return false;
-
-        if(IsDefined(equipmentCombined) && equipmentCombined.size)
-        {
-            for(a = 0; a < weaps.size; a++)
-            {
-                if(isInArray(equipment, weaps[a]) && !IsWeaponInBox(weaps[a]))
-                    return false;
-            }
-        }
-    }
-    
-    return true;
-}
-
-function EnableAllWeaponsInBox(upgraded = false)
-{
-    weaps = ((upgraded ? GetArrayKeys(level.zombie_weapons_upgraded) : GetArrayKeys(level.zombie_weapons)));
-
-    if(IsAllWeaponsInBox(upgraded))
-    {
-        if(isInArray(level.custom_boxWeapons, GetWeapon("minigun")))
-            level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, GetWeapon("minigun"));
-        
-        if(isInArray(level.custom_boxWeapons, GetWeapon("defaultweapon")))
-            level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, GetWeapon("defaultweapon"));
-        
-        for(a = 0; a < weaps.size; a++)
-        {
-            if(isInArray(level.custom_boxWeapons, weaps[a]))
-                level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, weaps[a]);
-        }
-    }
-    else
-    {
-        weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
-        
-        for(a = 0; a < weaps.size; a++)
-        {
-            if(IsInArray(weaponsVar, ToLower(CleanString((upgraded ? zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a])) : zm_utility::GetWeaponClassZM(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none" && !IsWeaponInBox(weaps[a]))
-                level.custom_boxWeapons[level.custom_boxWeapons.size] = weaps[a];
-        }
-        
-        if(!upgraded)
-        {
-            equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
-            keys = GetArrayKeys(equipment);
-
-            if(!IsWeaponInBox(GetWeapon("minigun")))
-                level.custom_boxWeapons[level.custom_boxWeapons.size] = GetWeapon("minigun");
-            
-            if(!IsWeaponInBox(GetWeapon("defaultweapon")))
-                level.custom_boxWeapons[level.custom_boxWeapons.size] = GetWeapon("defaultweapon");
-
-            if(IsDefined(keys) && keys.size)
-            {
-                for(a = 0; a < weaps.size; a++)
-                {
-                    if(isInArray(equipment, weaps[a]) && !IsWeaponInBox(weaps[a]))
-                        level.custom_boxWeapons[level.custom_boxWeapons.size] = weaps[a];
-                }
-            }
-        }
-    }
-
-    level.CustomRandomWeaponWeights = &CustomBoxWeight;
-}
-
-function IsWeaponInBox(weapon)
-{
-    if(!IsDefined(level.custom_boxWeapons))
-        return false;
-    
-    return isInArray(level.custom_boxWeapons, weapon);
-}
-
-function CustomBoxWeight(keys)
-{
-    return array::randomize(level.custom_boxWeapons);
-}
-
-function OpenAllDoors()
-{
-    if(IsAllDoorsOpen())
-        return;
-    
-    curs = self getCursor();
-    menu = self getCurrent();
-    
-    SetDvar("zombie_unlock_all", 1);
-    types = Array("zombie_door", "zombie_airlock_buy", "zombie_debris");
-
-    for(i = 0; i < 2; i++) //Runs twice to ensure all doors open
-    {
-        for(a = 0; a < types.size; a++)
-        {
-            doors = GetEntArray(types[a], "targetname");
-
-            if(!IsDefined(doors))
-                continue;
-
-            for(b = 0; b < doors.size; b++)
-            {
-                if(!IsDefined(doors[b]) || types[a] == "zombie_door" && doors[b] IsDoorOpen(types[a]))
-                    continue;
-                
-                if(types[a] == "zombie_debris")
-                {
-                    doors[b] notify("trigger", self, 1);
-                }
-                else
-                {
-                    doors[b] notify("trigger");
-
-                    if(types[a] == "zombie_door")
-                    {
-                        if(doors[b].script_noteworthy == "electric_door" || doors[b].script_noteworthy == "electric_buyable_door" || doors[b].script_noteworthy == "local_electric_door")
-                        {
-                            if(doors[b].script_noteworthy == "local_electric_door")
-                                doors[b] notify("local_power_on");
-                            else
-                                doors[b] notify("power_on");
-                            
-                            doors[b].power_on = true;
-                        }
-                    }
-                }
-
-                wait 0.05;
-            }
-        }
-
-        if(IsAllDoorsOpen())
-            break;
-
-        wait 1;
-    }
-
-    level.local_doors_stay_open = 1;
-    level.power_local_doors_globally = 1;
-    wait 0.5;
-
-    level notify("open_sesame");
-    self RefreshMenu(menu, curs);
-
-    wait 1;
-    SetDvar("zombie_unlock_all", 0);
-}
-
-function IsAllDoorsOpen()
-{
-    if(Is_True(level.MoonDoors))
-        return true;
-    
-    types = Array("zombie_door", "zombie_airlock_buy", "zombie_debris");
-
-    for(a = 0; a < types.size; a++)
-    {
-        doors = GetEntArray(types[a], "targetname");
-
-        if(IsDefined(doors) && doors.size)
-        {
-            for(b = 0; b < doors.size; b++)
-            {
-                if(IsDefined(doors[b]))
-                {
-                    if(!doors[b] IsDoorOpen(types[a]))
-                        return false;
-                }
-            }
-        }
-    }
-    
-    return true;
-}
-
-function IsDoorOpen(type)
-{
-    if(type == "zombie_door")
-    {
-        if(!Is_True(self.has_been_opened))
-            return false;
-    }
-    else
-    {
-        if(IsDefined(self.script_flag))
-        {
-            tokens = StrTok(self.script_flag, ",");
-
-            for(a = 0; a < tokens.size; a++)
-            {
-                if(!level flag::get(tokens[a]))
-                    return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-function SetZombieBarrierState(state)
-{
-    switch(state)
-    {
-        case "Repair All":
-            windows = struct::get_array("exterior_goal", "targetname");
-
-            for(a = 0; a < windows.size; a++)
-            {
-                if(zm_utility::all_chunks_intact(windows[a], windows[a].barrier_chunks))
-                    continue;
-
-                while(!zm_utility::all_chunks_intact(windows[a], windows[a].barrier_chunks))
-                {
-                    chunk = zm_utility::get_random_destroyed_chunk(windows[a], windows[a].barrier_chunks);
-
-                    if(!IsDefined(chunk))
-                        break;
-
-                    windows[a] thread zm_blockers::replace_chunk(windows[a], chunk, undefined, zm_powerups::is_carpenter_boards_upgraded(), 1);
-
-                    if(IsDefined(windows[a].clip))
-                    {
-                        windows[a].clip TriggerEnable(1);
-                        windows[a].clip DisconnectPaths();
-                    }
-                    else
-                    {
-                        zm_blockers::blocker_disconnect_paths(windows[a].neg_start, windows[a].neg_end);
-                    }
-                }
-            }
-            break;
-        
-        case "Break All":
-            zm_blockers::open_all_zbarriers();
-            break;
-        
-        default:
-            break;
-    }
-}
-
-function SpawnBot()
-{
-    bot = AddTestClient();
-
-    if(!IsDefined(bot))
-        return self iPrintlnBold("^1ERROR: ^7Couldn't Spawn Bot");
-
-    bot.pers["isBot"] = 1;
-    wait 0.5;
-    
-    if(bot.sessionstate == "spectator")
-        ServerRespawnPlayer(bot);
-}
-
-function CollectAllCraftables()
-{
-    menu = self getCurrent();
-    curs = self getCursor();
-    
-    keys = GetArrayKeys(level.zombie_include_craftables);
-
-    foreach(key in keys)
-    {
-        if(IsCraftableCollected(key) || key == "open_table" || IsSubStr(key, "ritual_") || IsSubStr(key, "wafflesniper"))
-            continue;
-        
-        foreach(part in level.zombie_include_craftables[key].a_piecestubs)
-        {
-            if(IsDefined(part.pieceSpawn))
-                self zm_craftables::player_take_piece(part.pieceSpawn);
-        }
-    }
-    
-    wait 0.05;
-    self RefreshMenu(menu, curs);
-}
-
-function CollectCraftableParts(craftable)
-{
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
-    {
-        if(IsDefined(part.pieceSpawn))
-            self zm_craftables::player_take_piece(part.pieceSpawn);
-    }
-    
-    wait 0.05;
-    self RefreshMenu(menu, curs);
-}
-
-function CollectCraftablePart(part)
-{
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    if(IsDefined(part.pieceSpawn))
-        self zm_craftables::player_take_piece(part.pieceSpawn);
-    
-    wait 0.05;
-    self RefreshMenu(menu, curs);
-}
-
-function IsCraftableCollected(craftable)
-{
-    if(craftable == "open_table" || IsSubStr(craftable, "ritual_") || IsSubStr(craftable, "wafflesniper"))
-        return true;
-    
-    foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
-    {
-        if(IsDefined(part.pieceSpawn.model))
-            return false;
-    }
-    
-    return true;
-}
-
-function IsPartCollected(part)
-{
-    if(IsDefined(part.pieceSpawn.model))
-        return false;
-    
-    return true;
-}
-
-function IsAllCraftablesCollected()
-{
-    craftables = GetArrayKeys(level.zombie_include_craftables);
-
-    for(a = 0; a < craftables.size; a++)
-    {
-        if(IsDefined(craftables[a]) && !IsSubStr(craftables[a], "ritual_") && !IsSubStr(craftables[a], "wafflesniper") && craftables[a] != "open_table" && !IsCraftableCollected(craftables[a]))
-            return false;
-    }
-    
-    return true;
-}
-
-function ServerChangeMap(map)
-{
-    if(!MapExists(map))
-        return self iPrintlnBold("Map Doesn't Exist");
-    
-    if(level.script == map)
-        return;
-    
-    Map(map);
-}
-
-function ServerRestartGame()
-{
-    mapNames = Array("zm_zod", "zm_factory", "zm_castle", "zm_island", "zm_stalingrad", "zm_genesis", "zm_prototype", "zm_asylum", "zm_sumpf", "zm_theater", "zm_cosmodrome", "zm_temple", "zm_moon", "zm_tomb");
-
-    if(isInArray(mapNames, level.script))
-        Map(level.script);
-    else
-        MissionFailed();
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//teleport.gsc
-function PopulateTeleportMenu(menu, player)
-{
-    switch(menu)
-    {
-        case "Teleport Menu":
-
-            MenuSpawnPoints = ArrayCombine(struct::get_array("player_respawn_point_arena", "targetname"), struct::get_array("player_respawn_point", "targetname"), 0, 1);
-            mapStr = ReturnMapName();
-            
-            self addMenu(menu);
-                self addOptBool(player.DisableTeleportEffect, "Disable Teleport Effect", &DisableTeleportEffect, player);
-                
-                if(IsDefined(MenuSpawnPoints) && MenuSpawnPoints.size)
-                    self addOptIncSlider("Official Spawn Points", &OfficialSpawnPoint, 0, 0, (MenuSpawnPoints.size - 1), 1, MenuSpawnPoints, player);
-                
-                if(ReturnMapName() != "Unknown")
-                    self addOpt(mapStr + " Teleports", &newMenu, mapStr + " Teleports");
-                
-                self addOpt("Entity Teleports", &newMenu, "Entity Teleports");
-                self addOptSlider("Teleport", &TeleportPlayer, Array("Crosshairs", "Sky", "Random Player"), player);
-                self addOptBool(player.TeleportGun, "Teleport Gun", &TeleportGun, player);
-                self addOptBool(player.SaveAndLoad, "Save & Load Position", &SaveAndLoad, player);
-                self addOpt("Save Current Location", &SaveCurrentLocation, player);
-                self addOpt("Load Saved Location", &LoadSavedLocation, player);
-
-                if(player != self)
-                {
-                    self addOpt("Teleport To Self", &TeleportPlayer, self, player);
-                    self addOpt("Teleport To Player", &TeleportPlayer, player, self);
-                }
-            break;
-        
-        case "Entity Teleports":            
-            self addMenu(menu);
-
-                if(IsDefined(level.chests[level.chest_index]))
-                    self addOpt("Mystery Box", &EntityTeleport, "Mystery Box", player);
-                
-                if(IsDefined(level.bgb_machines) && level.bgb_machines.size)
-                    self addOptIncSlider("BGB Machine", &EntityTeleport, 0, 0, (level.bgb_machines.size - 1), 1, player, "BGB Machine");
-                
-                tables = level.a_uts_craftables;
-
-                if(IsDefined(tables) && tables.size)
-                {
-                    valid = [];
-
-                    for(a = 0; a < tables.size; a++)
-                    {
-                        if(IsDefined(tables[a]) && IsDefined(tables[a].targetname))
-                        {
-                            if(tables[a].targetname != "open_craftable_trigger")
-                                continue;
-                            
-                            valid[valid.size] = a;
-                        }
-                    }
-
-                    if(valid.size)
-                        self addOptIncSlider("Crafting Table", &EntityTeleport, 0, 0, (valid.size - 1), 1, player, "Table");
-                }
-
-                perks = GetEntArray("zombie_vending", "targetname");
-
-                if(IsDefined(perks) && perks.size)
-                {
-                    foreach(perk in perks)
-                    {
-                        perkname = ReturnPerkName(CleanString(perk.script_noteworthy));
-
-                        if(perkname == "Unknown Perk")
-                            perkname = CleanString(perk.script_noteworthy);
-                        
-                        self addOpt(perkname, &EntityTeleport, perk.script_noteworthy, player);
-                    }
-                }
-            break;
-    }
-}
-
-function DisableTeleportEffect(player)
-{
-    player.DisableTeleportEffect = BoolVar(player.DisableTeleportEffect);
-}
-
-function OfficialSpawnPoint(index, points, player)
-{
-    player SetOrigin(points[index].origin);
-    player SetPlayerAngles(points[index].angles);
-
-    player PlayTeleportEffect();
-}
-
-function TeleportPlayer(origin, player, angles, name)
-{
-    if(!IsDefined(origin))
-        return;
-
-    if(IsPlayer(origin))
-        newOrigin = origin.origin;
-    
-    if(IsString(origin))
-    {
-        switch(origin)
-        {
-            case "Crosshairs":
-                newOrigin = self TraceBullet();
-                break;
-            
-            case "Sky":
-                newOrigin = player.origin + (0, 0, 35000);
-                break;
-            
-            case "Random Player":
-                if(level.players.size < 2)
-                    return self iPrintlnBold("^1ERROR: ^7Not Enough Players To Use This Option");
-                
-                index = RandomInt(level.players.size);
-
-                while(level.players[index] == player || !IsDefined(level.players[index]) || !IsPlayer(level.players[index]))
-                    index = RandomInt(level.players.size);
-                
-                newOrigin = level.players[index].origin;
-                break;
-        }
-    }
-    
-    if(!IsDefined(newOrigin))
-        newOrigin = origin;
-    
-    if(IsDefined(name) && ReturnMapName() == "Origins" && IsSubStr(name, "Robot Head") && !IsDefined(player.teleport_initial_origin))
-        player.teleport_initial_origin = player.origin;
-    
-    player SetOrigin(newOrigin);
-
-    if(IsDefined(angles))
-        player SetPlayerAngles(angles);
-
-    player PlayTeleportEffect();
-}
-
-function EntityTeleport(entity, player, eEntity)
-{
-    if(IsString(entity))
-    {
-        if(entity == "Mystery Box")
-        {
-            if(!IsDefined(level.chests) || !level.chests.size || !IsDefined(level.chests[level.chest_index]))
-                return;
-            
-            ent = level.chests[level.chest_index];
-            entAngleDir = (AnglesToRight(ent.angles) * -1);
-        }
-        
-        perks = GetEntArray("zombie_vending", "targetname");
-                    
-        if(IsDefined(perks) && perks.size)
-        {
-            foreach(perk in perks)
-            {
-                if(IsDefined(perk) && IsString(entity) && entity == perk.script_noteworthy)
-                {
-                    ent = perk.machine;
-                    
-                    if(IsDefined(ent))
-                        entAngleDir = AnglesToRight(ent.angles);
-                    
-                    break;
-                }
-            }
-        }
-    }
-    else if(IsInt(entity) && IsDefined(eEntity) && eEntity == "BGB Machine")
-    {
-        if(!IsDefined(level.bgb_machines) || !level.bgb_machines.size)
-            return;
-        
-        ent = level.bgb_machines[entity];
-
-        if(!IsDefined(ent))
-            return;
-        
-        entAngleDir = AnglesToRight(ent.angles);
-    }
-    else if(IsInt(entity) && IsDefined(eEntity) && eEntity == "Table")
-    {
-        tables = level.a_uts_craftables;
-
-        if(!IsDefined(tables) || !tables.size)
-            return;
-        
-        valid = [];
-
-        for(a = 0; a < tables.size; a++)
-        {
-            if(IsDefined(tables[a]) && IsDefined(tables[a].targetname))
-            {
-                if(tables[a].targetname != "open_craftable_trigger")
-                    continue;
-                
-                valid[valid.size] = a;
-            }
-        }
-        
-        ent = tables[valid[entity]];
-
-        if(!IsDefined(ent))
-            return;
-
-        entAngleDir = AnglesToForward(ent.angles);
-    }
-
-    if(!IsDefined(ent) || !IsDefined(entAngleDir))
-        return;
-    
-    player SetOrigin(ent.origin + (entAngleDir * 70));
-    player SetPlayerAngles(VectorToAngles((ent.origin + (0, 0, 55)) - player GetEye()));
-
-    player PlayTeleportEffect();
-}
-
-function TeleportGun(player)
-{
-    player endon("disconnect");
-    player endon("EndTeleportGun");
-    
-    player.TeleportGun = BoolVar(player.TeleportGun);
-
-    if(Is_True(player.TeleportGun))
-    {
-        while(Is_True(player.TeleportGun))
-        {
-            player waittill("weapon_fired");
-            
-            player SetOrigin(player TraceBullet());
-            player PlayTeleportEffect();
-        }
-    }
-    else
-    {
-        player notify("EndTeleportGun");
-    }
-}
-
-function SaveAndLoad(player)
-{
-    player endon("disconnect");
-
-    player.SaveAndLoad = BoolVar(player.SaveAndLoad);
-
-    if(Is_True(player.SaveAndLoad))
-    {
-        player iPrintlnBold("Press [{+actionslot 3}] To ^2Save Current Location");
-        player iPrintlnBold("Press [{+actionslot 2}] To ^2Load Saved Location");
-
-        while(Is_True(player.SaveAndLoad))
-        {
-            if(!player isInMenu(true))
-            {
-                if(player ActionslotThreeButtonPressed())
-                {
-                    player SaveCurrentLocation(player);
-                    wait 0.05;
-                }
-
-                if(player ActionslotTwoButtonPressed() && IsDefined(player.SavedOrigin))
-                {
-                    player LoadSavedLocation(player);
-                    wait 0.05;
-                }
-            }
-
-            wait 0.05;
-        }
-    }
-}
-
-function SaveCurrentLocation(player)
-{
-    player.SavedOrigin = player.origin;
-    player.SavedAngles = player.angles;
-}
-
-function LoadSavedLocation(player)
-{
-    if(!IsDefined(player.SavedOrigin))
-    {
-        if(player != self)
-            self iPrintlnBold("^1ERROR: ^7Player Doesn't Have A Location Saved");
-        else
-            self iPrintlnBold("^1ERROR: ^7You Have To Save A Location Before Using This Option");
-        
-        return;
-    }
-    
-    player SetOrigin(player.SavedOrigin);
-    player SetPlayerAngles(player.SavedAngles);
-
-    player PlayTeleportEffect();
-}
-
-function PlayTeleportEffect()
-{
-    if(!Is_True(self.DisableTeleportEffect))
-    {
-        PlayFX(level._effect["teleport_splash"], self.origin);
-        PlayFX(level._effect["teleport_aoe_kill"], self GetTagOrigin("j_spineupper"));
-        
-        self PlaySound("zmb_bgb_abh_teleport_in");
-    }
-}
-
-function GenerateMapTeleports()
-{
-    map = ReturnMapName();
-
-    if(map != "Unknown") //Feel free to add your own custom teleport locations
-    {
-        //Teleport Name, Followed By The Origin
-        //[< teleport location name >, < (x, y, z) origin >]
-
-        switch(map)
-        {
-            case "Shadows Of Evil":
-                locations = Array("Spawn", (1077.87, -5364.46, 124.719), "Pack 'a' Punch", (2614.68, -2348.33, -351.875), "Prison", (3007, -6542, 296.125));
-                break;
-            
-            case "The Giant":
-                locations = Array("Spawn", (-56.6293, 286.99, 98.125), "Power", (529.258, -1835.94, 61.6158), "Pack 'a' Punch", (-53.7356, 499.323, 101.125), "Prison", (-93.9053, -3268.56, -104.875));
-                break;
-            
-            case "Der Eisendrache":
-                locations = Array("Spawn", (421.786, 559.05, -47.875), "Power", (-27.8228, 2784.15, 848.125), "Pyramid", (-1476.97, 2253.83, 200.2), "Boss Fight Room", (-3182.63, 6962.58, -252.375), "Time Travel Room", (-278.407, 5001.93, 152.125), "Prison", (917.821, 912.26, 144.125));
-                break;
-            
-            case "Zetsubou No Shima":
-                locations = Array("Spawn", (393.455, -3181.32, -501.117), "Power", (-1475.2, 3456.67, -426.877), "Pack 'a' Punch", (246.815, 3818.53, -503.875), "Easter Egg Room", (-1974.675, 767.305, 276.125), "Prison", (2608, 1135, -175.875));
-                break;
-            
-            case "Gorod Krovi":
-                locations = Array("Spawn", (-144, -184, 0.125), "Power", (102, 4969, 144.125), "Pack 'a' Punch", (-2967, 21660, 0.125), "Prison", (-2152, 3644, 160.125));
-                break;
-            
-            case "Revelations":
-                locations = Array("Spawn", (-4812, 72, -451.2), "Pack 'a' Punch", (819, 145, -3301.9), "Origins", (-3006, 3470, 1066), "Nacht Der Untoten", (109, 448, -379.6), "Verruckt", (5027, -2366, 230), "Kino Der Toten", (-1393, -9218, -1663.5), "Shangri-La", (-2023, -4151, -1699.5), "Mob Of The Dead", (478, 3301, 1264.125), "Prison", (154, 474, -740.125));
-                break;
-            
-            case "Nacht Der Untoten":
-                locations = Array("Spawn", (53, 415, 5.25), "Prison", (-162, -396, 1.125));
-                break;
-            
-            case "Verruckt":
-                locations = Array("Spawn", (1097, 302, 64.125), "Power", (-357, -219, 226.125), "Prison", (1154, 791, 64.125));
-                break;
-            
-            case "Shi No Numa":
-                locations = Array("Spawn", (10267, 514, -528.875), "Out Of The Map", (12374, 4523, -664.875), "Under The Map", (11838, -1614, -1217.94), "Prison", (12500, -939, -644.875));
-                break;
-            
-            case "Kino Der Toten":
-                locations = Array("Spawn", (13.2366, -1262.8, 90.125), "Power", (-619.298, 1391.23, -15.875), "Pack 'a' Punch", (5.74551, -376.756, 320.125), "Air Force Room", (1154.75, 2650.46, -367.875), "Surgical Room", (1948.13, -2204.91, 136.125), "Samantha's Room", (-2636.31, 189.825, 52.125), "Samantha's Red Room", (-2620.55, -1106.91, 53.3851), "Prison", (-1590.36, -4760.5, -167.875));
-                break;
-            
-            case "Ascension":
-                locations = Array("Spawn", (-512, 3, -484.875), "Power", (-464, 1028, 220.125), "Pack 'a' Punch", (487, 389, -303.875), "Prison", (-228, 1306, -485.875));
-                break;
-            
-            case "Shangri-La":
-                locations = Array("Spawn", (-10, -740, 20.125), "Pack 'a' Punch", (-2, 381, 289.125), "Prison", (1052, 1275, -547.875));
-                break;
-            
-            case "Moon":
-                locations = Array("Earth Spawn", (22250, -38663, -679.875), "Moon Spawn", (-4, 32, -1.875), "Power", (42, 3100, -587.875), "Dome", (-162, 6893, 0.45), "Prison", (743, 966, -220.875));
-                break;
-            
-            case "Origins":
-                locations = Array("Spawn", (2698.43, 5290.48, -346.219), "Staff Chamber", (-2.4956, -2.693, -751.875), "The Crazy Place", (10334.5, -7891.93, -411.875), "Lightning Tunnel", (-3234, -372, -188), "Wind Tunnel", (3330, 1227, -343), "Fire Tunnel", (3064, 4395, -599), "Ice Tunnel", (1431, -1728, -121), "Robot Head: Odin", (-6759.17, -6541.72, 159.375), "Robot Head: Thor", (-6223.59, -6547.65, 159.375), "Robot Head: Freya", (-5699.83, -6540.03, 159.375), "Prison", (-3142.11, 1125.09, -63.875));
-                break;
-            
-            case "Mob Of The Dead":
-                locations = Array("Spawn", (-2185.649, 5548.136, 2688.125), "Pack 'a' Punch(Bridge)", (-10931.269, 31045.974, 3800.125), "Roof", (115.627, 4876.537, 3052.125), "Prison", (-2744.295, 3911.298, 2792.125));
-                break;
-            
-            case "Die Rise":
-                locations = Array("Spawn", (-880.691, 362.408, 1808.125), "Power", (460.962, -1024.275, -287.875), "Bank Showers", (0.08, -394.350, -287.875), "Prison", (-200.960, -1127.386, 944.125));
-                break;
-            
-            case "Bus Depot":
-                locations = Array("Spawn", (1444.05, 4467.5, 0.125), "Power", (1272.86, 4339.175, -151.625), "Pack 'a' Punch", (3121.84, 1892.9, 21.812), "Prison", (-484.175, 260.947, 0.125));
-                break;
-            
-            case "Tunnel":
-                locations = Array("Spawn", (1490.38, -2368.4, 275.8), "Power", (3952.9, -1431.5, 72.125), "Pack 'a' Punch", (1444.7, -449.98, 103.19), "Prison", (2175, -2836.6, 320.125));
-                break;
-            
-            case "Diner":
-                locations = Array("Spawn", (7583.19, -12471.09, -0.625), "Power", (10258.39, -12906.60, 95.125), "Pack 'a' Punch", (5171.02, -13046.58, 0.64), "Prison", (5516.14, -19922.40, -115.875));
-                break;
-            
-            case "Farm":
-                locations = Array("Spawn", (4924.46, -586.4, 80.92), "Power", (7154.933, 1721.47, -487.875), "Pack 'a' Punch", (6463.42, 1914.62, -487.875), "Prison", (5152.64, 2035.49, -247.875));
-                break;
-            
-            case "Der Riese: Declassified":
-                locations = Array("Spawn", (-51.78, 305.3, 98.375), "Power", (530.13, -1810.82, 61.125), "Pack 'a' Punch", (-55.18, 511, 101.125), "Prison", (5454.43, -20.8, -271.875), "Kino Der Toten", (28491.7, -1889, -323.16), "Nacht Der Untoten", (24360.625, -10584, -872.52), "Richtofen's Lab", (23457.99, 961.57, 57.21), "Samantha's Bedroom", (23346.86, -1918.75, 174.125), "Forest", (27320.9, -10309.79, -879.73), "Boss Fight", (41130, 37102.87, -1995.35));
-                break;
-            
-            case "Leviathan":
-                locations = Array("Spawn", (-789.95, -29.18, -484.875));
-                break;
-        }
-
-        return locations;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//weaponry.gsc
-function PopulateWeaponry(menu, player)
-{
-    switch(menu)
-    {
-        case "Weaponry":
-            weapons = Array("Assault Rifles", "Sub Machine Guns", "Light Machine Guns", "Sniper Rifles", "Shotguns", "Pistols", "Launchers", "Specials");
-
-            self addMenu(menu);
-
-                if(!IsVerkoMap())
-                {
-                    self addOpt("Options", &newMenu, "Weapon Options");
-                    self addOpt("Attachments", &newMenu, "Weapon Attachments");
-                    self addOpt("Loadout", &newMenu, "Weapon Loadout");
-                    self addOpt("Camo", &newMenu, "Weapon Camo");
-                    self addOpt("AAT", &newMenu, "Weapon AAT");
-                }
-                else
-                {
-                    self addOpt("Take Current Weapon", &TakeCurrentWeapon, player);
-                    self addOpt("Take All Weapons", &TakePlayerWeapons, player);
-                    self addOptSlider("Drop Current Weapon", &DropCurrentWeapon, Array("Take", "Don't Take"), player);
-                    self addOptSlider("Pack 'a' Punch Current Weapon", &VerkoPackCurrentWeapon, Array("None", "Upgrade", "Mastery"), player);
-                }
-
-                self addOpt("");
-                self addOpt("Equipment", &newMenu, "Equipment Menu");
-
-                if(!IsVerkoMap())
-                {
-                    for(a = 0; a < weapons.size; a++)
-                        self addOpt(weapons[a], &newMenu, weapons[a]);
-                }
-                else
-                {
-                    for(a = 0; a < level.var_21b77150.size; a++)
-                        self addOptBool(player HasWeapon1(GetWeapon(level.var_21b77150[a])), level.var_7df703ba[a], &GivePlayerWeapon, GetWeapon(level.var_21b77150[a]), player);
-                }
-            break;
-        
-        case "Weapon Options":
-            self addMenu("Options");
-                self addOpt("Take Current Weapon", &TakeCurrentWeapon, player);
-                self addOpt("Take All Weapons", &TakePlayerWeapons, player);
-                self addOptSlider("Drop Current Weapon", &DropCurrentWeapon, Array("Take", "Don't Take"), player);
-                self addOptBool(player zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()), "Pack 'a' Punch Current Weapon", &PackCurrentWeapon, player);
-            break;
-        
-        case "Weapon Loadout":
-            self addMenu("Loadout");
-                self addOpt("Save Primary Weapon", &SaveCurrentLoadout, "Primary", player);
-                self addOpt("Save Secondary Weapon", &SaveCurrentLoadout, "Secondary", player);
-                self addOpt("Save Primary Offhand", &SaveCurrentLoadout, "Primary Offhand", player);
-                self addOpt("Save Secondary Offhand", &SaveCurrentLoadout, "Secondary Offhand", player);
-                self addOpt("");
-                self addOpt("Reset", &ClearLoadout, player);
-            break;
-        
-        case "Weapon Camo":
-            self addMenu("Camo");
-                self addOptBool(player.FlashingCamo, "Flashing Camo", &FlashingCamo, player);
-                self addOpt("");
-
-                skip = Array(37, 72, 127, 128, 129, 130); //These are camos that aren't in the game anymore, so they will be skipped
-
-                for(a = 0; a < 139; a++)
-                {
-                    if(isInArray(skip, a))
-                        continue;
-                    
-                    self addOpt(((ReturnCamoName((a + 45)) == "" || IsSubStr(ReturnCamoName((a + 45)), "PLACEHOLDER") || ReturnCamoName((a + 45)) == "MPUI_CAMO_LOOT_CONTRACT") ? CleanString(ReturnRawCamoName((a + 45))) : ReturnCamoName((a + 45))), &SetPlayerCamo, a, player);
-                }
-            break;
-        
-        case "Weapon Attachments":
-            weapon = player GetCurrentWeapon();
-            
-            self addMenu("Attachments");
-
-                if(IsDefined(weapon.supportedAttachments) && weapon.supportedAttachments.size)
-                {
-                    foreach(attachment in weapon.supportedAttachments)
-                    {
-                        name = ReturnAttachmentName(attachment);
-
-                        if(!IsDefined(name) || name == "" || name == "none" || name == "dw")
-                            continue;
-                        
-                        self addOptBool((IsDefined(weapon.attachments) && isInArray(weapon.attachments, attachment)), ReturnAttachmentName(attachment), &GivePlayerAttachment, attachment, player);
-                    }
-                }
-                else
-                {
-                    self addOpt("No Supported Attachments Found");
-                }
-            break;
-        
-        case "Weapon AAT":
-            keys = GetArrayKeys(level.aat);
-            
-            self addMenu("AAT");
-                
-                if(IsDefined(keys) && keys.size)
-                {
-                    for(a = 0; a < keys.size; a++)
-                    {
-                        if(IsDefined(keys[a]) && level.aat[keys[a]].name != "none")
-                            self addOptBool((IsDefined(player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())]) && player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())] == keys[a]), CleanString(level.aat[keys[a]].name), &GiveWeaponAAT, keys[a], player);
-                    }
-                }
-            break;
-        
-        case "Equipment Menu":
-            if(IsDefined(level.zombie_include_equipment))
-                include_equipment = GetArrayKeys(level.zombie_include_equipment);
-
-            equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
-            keys = GetArrayKeys(equipment);
-
-            self addMenu("Equipment");
-
-                if(IsDefined(keys) && keys.size || IsDefined(include_equipment) && include_equipment.size)
-                {
-                    foreach(index, weapon in GetArrayKeys(level.zombie_weapons))
-                    {
-                        if(isInArray(equipment, weapon))
-                            self addOptBool(player HasWeapon(weapon), weapon.displayname, &GivePlayerEquipment, weapon, player);
-                    }
-
-                    if(IsDefined(include_equipment) && include_equipment.size)
-                    {
-                        foreach(weapon in include_equipment)
-                            self addOptBool(player HasWeapon(weapon), weapon.displayname, &GivePlayerEquipment, weapon, player);
-                    }
-                }
-            break;
-    }
-}
-
-function TakeCurrentWeapon(player)
-{
-    weapon = player GetCurrentWeapon();
-
-    if(!IsDefined(weapon) || weapon == level.weaponnone || IsDefined(level.weaponbasemelee) && weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
-        return;
-    
-    player TakeWeapon(weapon);
-}
-
-function TakePlayerWeapons(player)
-{
-    foreach(weapon in player GetWeaponsList(1))
-    {
-        if(!IsDefined(weapon) || weapon == level.weaponnone || IsDefined(level.weaponbasemelee) && weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
-            continue;
-        
-        player TakeWeapon(weapon);
-    }
-}
-
-function DropCurrentWeapon(type, player)
-{
-    weapon = player GetCurrentWeapon();
-    clip = player GetWeaponAmmoClip(player GetCurrentWeapon());
-    stock = player GetWeaponAmmoStock(player GetCurrentWeapon());
-
-    if(IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]))
-        aat = player.aat[player aat::get_nonalternate_weapon(weapon)];
-
-    player DropItem(weapon);
-
-    if(type == "Don't Take")
-    {
-        newWeapon = player zm_weapons::weapon_give(weapon, false, false, true);
-    
-        if(!IsDefined(newWeapon))
-            return;
-
-        if(IsDefined(weapon.savedCamo))
-            SetPlayerCamo(weapon.savedCamo, player);
-        
-        if(IsDefined(aat))
-            player aat::acquire(weapon, aat);
-        
-        player SetWeaponAmmoClip(newWeapon, clip);
-        player SetWeaponAmmoStock(newWeapon, stock);
-
-        if(!IsSubStr(newWeapon.name, "_knife"))
-            player SetSpawnWeapon(newWeapon, true);
-    }
-}
-
-function PackCurrentWeapon(player, buildKit = true)
-{
-    player endon("disconnect");
-
-    originalWeapon = player GetCurrentWeapon();
-
-    if(!IsDefined(originalWeapon) || originalWeapon == level.weaponnone)
-        return self iPrintlnBold("^1ERROR: ^7Invalid Weapon");
-
-    newWeapon = ((!zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()) ? zm_weapons::get_upgrade_weapon(player GetCurrentWeapon()) : zm_weapons::get_base_weapon(player GetCurrentWeapon())));
-
-    if(!IsDefined(newWeapon))
-        return;
-
-    base_weapon = newWeapon;
-    upgraded = 0;
-
-    if(zm_weapons::is_weapon_upgraded(newWeapon))
-    {
-        upgraded = 1;
-        base_weapon = zm_weapons::get_base_weapon(newWeapon);
-    }
-
-    if(zm_weapons::is_weapon_included(base_weapon))
-        force_attachments = zm_weapons::get_force_attachments(base_weapon.rootweapon);
-
-    camo = (((!upgraded && IsDefined(originalWeapon.savedCamo) && originalWeapon.savedCamo != level.pack_a_punch_camo_index) ? originalWeapon.savedCamo : (upgraded ? level.pack_a_punch_camo_index : undefined)));
-
-    if(IsDefined(force_attachments) && force_attachments.size)
-    {
-        if(upgraded)
-        {
-            packed_attachments = [];
-
-            packed_attachments[packed_attachments.size] = "extclip";
-            packed_attachments[packed_attachments.size] = "fmj";
-
-            force_attachments = ArrayCombine(force_attachments, packed_attachments, 0, 0);
-        }
-
-        acvi = 0;
-        newWeapon = GetWeapon(newWeapon.rootweapon.name, force_attachments);
-        weapon_options = player CalcWeaponOptions(camo, 0, 0);
-    }
-    else
-    {
-        if(buildKit)
-        {
-            newWeapon = player GetBuildKitWeapon(newWeapon, upgraded);
-            weapon_options = player GetBuildKitWeaponOptions(newWeapon, camo);
-            acvi = player GetBuildKitAttachmentCosmeticVariantIndexes(newWeapon, upgraded);
-        }
-        else
-        {
-            acvi = 0;
-            weapon_options = player CalcWeaponOptions(camo, 0, 0);
-        }
-    }
-
-    if(!IsDefined(newWeapon))
-        return;
-
-    newWeapon.savedCamo = camo;
-
-    player TakeWeapon(player GetCurrentWeapon());
-    player GiveWeapon(newWeapon, weapon_options, acvi);
-    player GiveStartAmmo(newWeapon);
-    player SetSpawnWeapon(newWeapon, true);
-}
-
-function VerkoPackCurrentWeapon(type, player)
-{
-    currentWeapon = player GetCurrentWeapon();
-
-    if(!IsDefined(currentWeapon) || currentWeapon == level.weaponnone)
-        return self iPrintlnBold("^1ERROR: ^7Not A Valid Weapon");
-    
-    if(isInArray(level.var_21b77150, currentWeapon.name))
-    {
-        currentArray = level.var_21b77150;
-
-        if(type == "None")
-            return;
-    }
-    else if(isInArray(level.var_2b893b73, currentWeapon.name))
-    {
-        currentArray = level.var_2b893b73;
-
-        if(type == "Upgrade")
-            return;
-    }
-    else if(isInArray(level.var_23af580e, currentWeapon.name))
-    {
-        currentArray = level.var_23af580e;
-
-        if(type == "Mastery")
-            return;
-    }
-    else
-    {
-        return self iPrintlnBold("^1ERROR: Not A Valid Weapon");
-    }
-    
-    weaponIndex = 0;
-
-    for(a = 0; a < currentArray.size; a++)
-    {
-        if(currentArray[a] == currentWeapon.name)
-            weaponIndex = a;
-    }
-    
-    switch(type)
-    {
-        case "None":
-            newWeapon = GetWeapon(level.var_21b77150[weaponIndex]);
-            break;
-        
-        case "Upgrade":
-            newWeapon = GetWeapon(level.var_2b893b73[weaponIndex]);
-            break;
-        
-        case "Mastery":
-            newWeapon = GetWeapon(level.var_23af580e[weaponIndex]);
-            break;
-    }
-    
-    player TakeWeapon(currentWeapon);
-    player GiveWeapon(newWeapon);
-    player GiveStartAmmo(newWeapon);
-    player SetSpawnWeapon(newWeapon, true);
-    wait 0.05;
-
-    if(type == "Mastery")
-    {
-        aatName = VerkoGetAAT(level.var_fc480cef[weaponIndex]);
-
-        if(aatName != "undefined")
-            player thread aat::acquire(newWeapon, aatName);
-    }
-}
-
-function VerkoGetAAT(aat)
-{
-    switch(aat)
-    {
-        case "deadwire":
-            return "zm_aat_dead_wire";
-        
-        case "blastfurnace":
-            return "zm_aat_blast_furnace";
-        
-        case "thunderwall":
-            return "zm_aat_thunder_wall";
-        
-        case "turned":
-            return "zm_aat_turned";
-        
-        case "fireworks":
-            return "zm_aat_fire_works";
-        
-        case "aethercollapse":
-            return "zm_aat_aethercollapse";
-        
-        default:
-            return "undefined";
-    }
-}
-
-function GivePlayerAttachment(attachment, player)
-{
-    player endon("disconnect");
-
-    weapon = player GetCurrentWeapon();
-    attachments = weapon.attachments;
-
-    if(IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]))
-        aat = player.aat[player aat::get_nonalternate_weapon(weapon)];
-    
-    if(isInArray(attachments, attachment)) //If the weapon has the attachment, it will be removed
-    {
-        attachments = ArrayRemove(attachments, attachment);
-    }
-    else //If the weapon doesn't have the attachment, it will be added
-    {
-        if(!IsValidCombination(attachments, attachment))
-        {
-            invalid = GetInvalidAttachments(attachments, attachment);
-
-            if(IsDefined(invalid) && invalid.size)
-            {
-                for(a = 0; a < invalid.size; a++)
-                    attachments = ArrayRemove(attachments, invalid[a]);
-            }
-        }
-        
-        array::add(attachments, attachment, 0);
-
-        if(attachments.size > 8)
-            return self iPrintlnBold("^1ERROR: ^7Attachment Limit Reached");
-    }
-
-    newWeapon = GetWeapon(weapon.rootweapon.name, attachments);
-    camo = ((IsDefined(weapon.savedCamo) ? weapon.savedCamo : 0));
-    weapon_options = player CalcWeaponOptions(camo, 0, 0);
-    newWeapon.savedCamo = camo;
-    
-    player TakeWeapon(weapon);
-    player GiveWeapon(newWeapon, weapon_options);
-    player SetSpawnWeapon(newWeapon, true);
-
-    if(IsDefined(aat))
-        player aat::acquire(newWeapon, aat);
-}
-
-function IsValidCombination(attachments, attachment)
-{
-    valid = ReturnAttachmentCombinations(attachment);
-    tokens = StrTok(valid, " ");
-
-    for(a = 0; a < attachments.size; a++)
-    {
-        if(!isInArray(tokens, attachments[a]))
-            return false;
-    }
-    
-    return true;
-}
-
-function GetInvalidAttachments(attachments, attachment)
-{
-    valid = ReturnAttachmentCombinations(attachment);
-    tokens = StrTok(valid, " ");
-
-    invalid = [];
-
-    for(a = 0; a < attachments.size; a++)
-    {
-        if(!isInArray(tokens, attachments[a]))
-            array::add(invalid, attachments[a], 0);
-    }
-    
-    return invalid;
-}
-
-function SaveCurrentLoadout(type, player)
-{
-    userID = player GetXUID();
-
-    if(!IsSubStr(ToLower(type), "offhand"))
-    {
-        weapon = player GetCurrentWeapon();
-
-        if(!IsDefined(weapon) || weapon == level.weaponnone || weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
-            return self iPrintlnBold("^1ERROR: ^7Invalid Weapon");
-
-        if(IsDefined(weapon.attachments) && weapon.attachments.size)
-        {
-            attachments = "";
-
-            foreach(index, attachment in weapon.attachments)
-                attachments += (((index == (weapon.attachments.size - 1)) ? attachment : attachment + ";"));
-        }
-        else
-        {
-            attachments = "none";
-        }
-        
-        SetDvar("Loadout_" + type + "_" + userID, zm_weapons::get_base_weapon(weapon).name);
-        SetDvar("Loadout_" + type + "_Attachments_" + userID, attachments);
-        SetDvar("Loadout_" + type + "_Camo_" + userID, (IsDefined(weapon.savedCamo) ? weapon.savedCamo : 0));
-        SetDvar("Loadout_" + type + "_Upgraded_" + userID, zm_weapons::is_weapon_upgraded(weapon));
-        SetDvar("Loadout_" + type + "_AAT_" + userID, (IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]) ? player.aat[player aat::get_nonalternate_weapon(weapon)] : "none"));
-    }
-    else
-    {
-        saveType = (((type == "Primary Offhand") ? "primary_offhand" : "secondary_offhand"));
-        weapon = (((type == "Primary Offhand") ? player zm_utility::get_player_lethal_grenade() : player zm_utility::get_player_tactical_grenade()));
-        
-        if(!IsDefined(weapon) || weapon == level.weaponnone)
-            return self iPrintlnBold("^1ERROR: ^7Invalid Offhand");
-        
-        SetDvar("Loadout_" + saveType + "_" + userID, weapon.name);
-    }
-    
-    SetDvar("Apparition_Loadout_" + userID, 1);
-    self iPrintlnBold(type + " ^2Saved");
-}
-
-function ClearLoadout(player)
-{
-    userID = player GetXUID();
-    saved = GetDvarInt("Apparition_Loadout_" + userID);
-
-    if(!IsDefined(saved) || !saved)
-        return;
-    
-    types = Array("Primary", "Secondary");
-
-    SetDvar("Apparition_Loadout_" + userID, 0);
-
-    foreach(type in types)
-    {
-        SetDvar("Loadout_" + type + "_" + userID, "");
-        SetDvar("Loadout_" + type + "_Attachments_" + userID, "");
-        SetDvar("Loadout_" + type + "_Camo_" + userID, 0);
-        SetDvar("Loadout_" + type + "_Upgraded_" + userID, 0);
-        SetDvar("Loadout_" + type + "_AAT_" + userID, "");
-    }
-
-    types = Array("primary_offhand", "secondary_offhand");
-
-    foreach(type in types)
-        SetDvar("Loadout_" + type + "_" + userID, "");
-    
-    self iPrintlnBold("Loadout ^2Cleared");
-}
-
-function GivePlayerLoadout()
-{
-    self endon("disconnect");
-
-    userID = self GetXUID();
-    
-    if(GetDvarInt("Apparition_Loadout_" + userID))
-    {
-        types = Array("Secondary", "Primary");
-        first = true;
-
-        foreach(type in types)
-        {
-            weapon = GetDvarString("Loadout_" + type + "_" + userID);
-
-            if(!IsDefined(weapon) || weapon == "" || !isInArrayKeys(level.zombie_weapons, GetWeapon(weapon)))
-                continue;
-            
-            if(first)
-            {
-                foreach(primary in self GetWeaponsListPrimaries())
-                {
-                    if(!IsDefined(primary) || primary == level.weaponnone || primary == level.weaponbasemelee || IsSubStr(primary.name, "_knife"))
-                        continue;
-                    
-                    self TakeWeapon(primary);
-                }
-
-                first = false;
-            }
-
-            newWeapon = GivePlayerWeapon(GetWeapon(weapon), self);
-
-            if(IsDefined(newWeapon.attachments) && newWeapon.attachments.size) //Fix for build kit attachments conflicting saved attachments
-            {
-                attachments = [];
-                baseWeapon = GetWeapon(newWeapon.rootweapon.name, attachments);
-
-                self TakeWeapon(newWeapon);
-                self GiveWeapon(baseWeapon);
-                self SetSpawnWeapon(baseWeapon, true);
-            }
-
-            if(GetDvarInt("Loadout_" + type + "_Upgraded_" + userID))
-                PackCurrentWeapon(self, false);
-            
-            weaponCamo = GetDvarInt("Loadout_" + type + "_Camo_" + userID);
-
-            if(weaponCamo)
-            {
-                newWeapon.savedCamo = weaponCamo;
-                SetPlayerCamo(weaponCamo, self);
-            }
-
-            weaponAAT = GetDvarString("Loadout_" + type + "_AAT_" + userID);
-
-            if(IsDefined(weaponAAT) && weaponAAT != "" && weaponAAT != "none")
-                GiveWeaponAAT(weaponAAT, self);
-            
-            weaponAttachments = GetDvarString("Loadout_" + type + "_Attachments_" + userID);
-
-            if(IsDefined(weaponAttachments) && weaponAttachments != "" && weaponAttachments != "none")
-            {
-                attachments = StrTok(weaponAttachments, ";");
-
-                for(a = 0; a < attachments.size; a++)
-                    GivePlayerAttachment(attachments[a], self);
-            }
-        }
-
-        level flag::wait_till("initial_blackscreen_passed");
-        wait 4;
-
-        types = Array("primary_offhand", "secondary_offhand");
-
-        foreach(type in types)
-        {
-            weapon = GetDvarString("Loadout_" + type + "_" + userID);
-
-            if(!IsDefined(weapon) || weapon == "" || weapon == level.weaponnone || !isInArrayKeys(level.zombie_weapons, GetWeapon(weapon)) && !isInArrayKeys(level.zombie_include_equipment, GetWeapon(weapon)))
-                continue;
-            
-            if(self HasWeapon(GetWeapon(weapon)))
-            {
-                self GiveStartAmmo(GetWeapon(weapon));
-                continue;
-            }
-            
-            GivePlayerEquipment(GetWeapon(weapon), self);
-            self GiveStartAmmo(GetWeapon(weapon));
-        }
-    }
-}
-
-function SetPlayerCamo(camo, player)
-{
-    weap = player GetCurrentWeapon();
-
-    if(!IsDefined(weap) || weap == level.weaponnone)
-        return;
-
-    weapon = player CalcWeaponOptions(camo, 0, 0);
-    NewWeapon = player GetBuildKitAttachmentCosmeticVariantIndexes(weap, zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()));
-    
-    player TakeWeapon(weap);
-    player GiveWeapon(weap, weapon, NewWeapon);
-    player SetSpawnWeapon(weap, true);
-
-    weap.savedCamo = camo;
-}
-
-function FlashingCamo(player)
-{
-    player endon("disconnect");
-
-    player.FlashingCamo = BoolVar(player.FlashingCamo);
-
-    while(Is_True(player.FlashingCamo))
-    {
-        if(!player IsMeleeing() && !player IsSwitchingWeapons() && !player IsReloading() && !player IsSprinting() && !player IsUsingOffhand() && !zm_utility::is_placeable_mine(player GetCurrentWeapon()) && !zm_equipment::is_equipment(player GetCurrentWeapon()) && !player zm_utility::has_powerup_weapon() && !zm_utility::is_hero_weapon(player GetCurrentWeapon()) && !player zm_utility::in_revive_trigger() && !player.is_drinking && player GetCurrentWeapon() != level.weaponnone)
-            SetPlayerCamo(RandomInt(139), player);
-        
-        wait 0.25;
-    }
-}
-
-function GiveWeaponAAT(aat, player)
-{
-    player endon("disconnect");
-
-    if(!IsDefined(player.aat))
-        player.aat = [];
-    
-    if(!IsDefined(player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())]) || player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())] != aat)
-    {
-        player aat::acquire(player GetCurrentWeapon(), aat);
-    }
-    else
-    {
-        player aat::remove(player GetCurrentWeapon());
-        player clientfield::set_to_player("aat_current", 0);
-    }
-}
-
-function GivePlayerEquipment(equipment, player)
-{
-    if(player HasWeapon(equipment))
-        player TakeWeapon(equipment);
-    else
-        player zm_weapons::weapon_give(equipment, false, false, true);
-}
-
-function GivePlayerWeapon(weapon, player)
-{
-    if(player HasWeapon1(weapon))
-    {
-        weapons = player GetWeaponsList(true);
-
-        if(!IsVerkoMap())
-        {
-            for(a = 0; a < weapons.size; a++)
-            {
-                if(zm_weapons::get_base_weapon(weapons[a]) == zm_weapons::get_base_weapon(weapon))
-                    weapon = weapons[a];
-            }
-        }
-        else
-        {
-            for(a = 0; a < weapons.size; a++)
-            {
-                if(VerkoGetBaseWeapon(weapons[a]) == VerkoGetBaseWeapon(weapon))
-                    weapon = weapons[a];
-            }
-        }
-
-        player TakeWeapon(weapon);
-        return;
-    }
-    
-    newWeapon = player zm_weapons::weapon_give(weapon, false, false, true);
-    player GiveStartAmmo(newWeapon);
-
-    if(!IsSubStr(newWeapon.name, "_knife"))
-        player SetSpawnWeapon(newWeapon, true);
-    
-    return newWeapon;
-}
-
-function VerkoGetBaseWeapon(weapon)
-{
-    if(!isInArray(level.var_2b893b73, weapon.name) && !isInArray(level.var_23af580e, weapon.name))
-        return weapon;
-    
-    if(isInArray(level.var_2b893b73, weapon.name))
-        currentArray = level.var_2b893b73;
-    else if(isInArray(level.var_23af580e, weapon.name))
-        currentArray = level.var_23af580e;
-    
-    if(!IsDefined(currentArray))
-        return weapon;
-    
-    for(a = 0; a < currentArray.size; a++)
-    {
-        if(currentArray[a] == weapon.name)
-            return GetWeapon(level.var_21b77150[a]);
-    }
-}
-
-function HasWeapon1(weapon)
-{
-    if(!IsDefined(weapon))
-        return false;
-    
-    weapons = self GetWeaponsList(true);
-
-    if(!IsDefined(weapons) || !weapons.size)
-        return false;
-
-    if(!IsVerkoMap())
-    {
-        for(a = 0; a < weapons.size; a++)
-        {
-            if(zm_weapons::get_base_weapon(weapons[a]) == zm_weapons::get_base_weapon(weapon))
-                return true;
-        }
-    }
-    else
-    {
-        for(a = 0; a < weapons.size; a++)
-        {
-            if(VerkoGetBaseWeapon(weapons[a]) == VerkoGetBaseWeapon(weapon))
-                return true;
-        }
-    }
-
-    return false;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//zombies.gsc
-function PopulateZombieOptions(menu)
-{
-    switch(menu)
-    {
-        case "Zombie Options":
-            self addMenu(menu);
-                self addOpt("Spawner", &newMenu, "AI Spawner");
-                self addOpt("Prioritize", &newMenu, "Prioritize Players");
-                self addOpt("Death Effect", &newMenu, "Zombie Death Effect");
-                self addOpt("Damage Effect", &newMenu, "Zombie Damage Effect");
-                self addOpt("Animations", &newMenu, "Zombie Animations");
-                self addOpt("Model", &newMenu, "Zombie Model Manipulation");
-                self addOptSlider("Gib", &ZombieGibBone, Array("Random", "Head", "Right Leg", "Left Leg", "Right Arm", "Left Arm"));
-                self addOptSlider("Kill", &KillZombies, Array("Death", "Head Gib", "Flame", "Delete"));
-                self addOptSlider("Health", &SetZombieHealth, Array("Custom", "Reset"));
-                self addOptSlider("Movement", &SetZombieRunSpeed, Array("Walk", "Run", "Sprint", "Super Sprint"));
-                
-                //The only map Knockdown isn't registered on is The Giant
-                if(ReturnMapName() != "The Giant")
-                    self addOptSlider("Knockdown", &KnockdownZombies, Array("Front", "Back"));
-
-                //Push is only registered on SOE
-                if(ReturnMapName() == "Shadows Of Evil")
-                    self addOptSlider("Push", &PushZombies, Array("Left", "Right"));
-                
-                self addOptSlider("Teleport", &TeleportZombies, Array("Crosshairs", "Self"));
-                self addOptIncSlider("Animation Speed", &SetZombieAnimationSpeed, 1, 1, 2, 0.5);
-                self addOptBool(level.ZombiesToCrosshairsLoop, "Teleport To Crosshairs", &ZombiesToCrosshairsLoop);
-                self addOptBool(level.DisableZombieCollision, "Disable Player Collision", &DisableZombieCollision);
-                self addOptBool((GetDvarString("ai_disableSpawn") == "1"), "Disable Spawning", &DisableZombieSpawning);
-                self addOptBool(level.DisableZombiePush, "Disable Push", &DisableZombiePush);
-                self addOptBool(level.ZombiesInvisibility, "Invisibility", &ZombiesInvisibility);
-                self addOptBool((GetDvarString("g_ai") == "0"), "Freeze", &FreezeZombies);
-                self addOptBool(level.ZombieDeathSounds, "Death Sounds", &ZombieDeathSounds);
-                self addOptBool(level.ZombieProjectileVomiting, "Projectile Vomit", &ZombieProjectileVomiting);
-                self addOptBool(level.DisappearingZombies, "Disappearing Zombies", &DisappearingZombies);
-                self addOptBool(level.ExplodingZombies, "Exploding Zombies", &ExplodingZombies);
-                self addOptBool(level.ZombieRagdoll, "Ragdoll After Death", &ZombieRagdoll);
-                self addOptBool(level.StackZombies, "Stack Zombies", &StackZombies);
-                self addOptBool(level.RemoveZombieEyes, "Remove Eyes", &RemoveZombieEyes);
-                self addOptBool((GetDvarVector("phys_gravity_dir") == (0, 0, -1)), "Bodies Float", &BodiesFloat);
-                self addOpt("Make Crawlers", &ForceZombieCrawlers);
-                self addOpt("Detach Heads", &DetachZombieHeads);
-                self addOpt("Clear All Corpses", &ServerClearCorpses);
-            break;
-        
-        case "AI Spawner":
-            if(!IsDefined(self.AISpawnLocation))
-                self.AISpawnLocation = "Crosshairs";
-            
-            map = ReturnMapName();
-            
-            self addMenu("Spawner");
-                self addOptSlider("Spawn Location", &AISpawnLocation, Array("Crosshairs", "Random", "Self"));
-                self addOptIncSlider("Zombie", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnZombie);
-
-                if(map != "Unknown")
-                {
-                    maps = Array("Shi No Numa", "The Giant", "Moon", "Kino Der Toten", "Der Eisendrache");
-
-                    if(isInArray(maps, map))
-                        self addOptIncSlider("Hellhound", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnDog);
-                    
-                    maps = Array("Shadows Of Evil", "Revelations", "Gorod Krovi");
-
-                    if(isInArray(maps, map))
-                    {
-                        if(map != "Gorod Krovi")
-                        {
-                            self addOptIncSlider("Wasp", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnWasp);
-                            self addOptIncSlider("Margwa", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMargwa);
-
-                            if(map == "Shadows Of Evil")
-                                self addOptIncSlider("Civil Protector", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnCivilProtector);
-                        }
-                        
-                        if(map != "Revelations")
-                            self addOptIncSlider("Raps", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnRaps);
-                    }
-
-                    maps = Array("Origins", "Der Eisendrache", "Revelations");
-
-                    if(isInArray(maps, map))
-                        self addOptIncSlider("Mechz", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMechz);
-                    
-                    if(map == "Gorod Krovi")
-                    {
-                        self addOptIncSlider("Sentinel Drone", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnSentinelDrone);
-                        self addOptIncSlider("Mangler", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMangler);
-                    }
-
-                    if(map == "Zetsubou No Shima" || map == "Revelations")
-                    {
-                        if(map == "Zetsubou No Shima")
-                            self addOptIncSlider("Thrasher", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnThrasher);
-                        
-                        self addOptIncSlider("Spider", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnSpider);
-                    }
-
-                    if(map == "Revelations")
-                        self addOptIncSlider("Fury", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnFury);
-                    
-                    if(map == "Kino Der Toten")
-                        self addOptIncSlider("Nova Zombie", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnNovaZombie);
-                }
-            break;
-        
-        case "Prioritize Players":
-            self addMenu(menu);
-            
-                foreach(player in level.players)
-                    self addOptBool(player.AIPrioritizePlayer, CleanName(player getName()), &AIPrioritizePlayer, player);
-            break;
-        
-        case "Zombie Death Effect":
-            self addMenu("Death Effect");
-                self addOptBool(!IsDefined(level.ZombiesDeathFX), "Disable", &SetZombiesDeathEffect, "");
-                self addOpt("");
-
-                for(a = 0; a < level.menuFX.size; a++)
-                    self addOptBool((IsDefined(level.ZombiesDeathFX) && level.ZombiesDeathFX == level.menuFX[a]), CleanString(level.menuFX[a]), &SetZombiesDeathEffect, level.menuFX[a]);
-            break;
-
-        case "Zombie Damage Effect":
-            self addMenu("Damage Effect");
-                self addOptBool(!IsDefined(level.ZombiesDamageFX), "Disable", &SetZombiesDamageEffect, "");
-                self addOpt("");
-
-                for(a = 0; a < level.menuFX.size; a++)
-                    self addOptBool((IsDefined(level.ZombiesDamageFX) && level.ZombiesDamageFX == level.menuFX[a]), CleanString(level.menuFX[a]), &SetZombiesDamageEffect, level.menuFX[a]);
-            break;
-        
-        case "Zombie Animations":
-
-            //These are base animations that will work on every map
-            anims = Array("ai_zombie_base_ad_attack_v1", "ai_zombie_base_ad_attack_v2", "ai_zombie_base_ad_attack_v3", "ai_zombie_base_ad_attack_v4", "ai_zombie_taunts_4");
-            notifies = Array("attack_anim", "attack_anim", "attack_anim", "attack_anim", "taunt_anim");
-
-            //These are the animations that are map specific
-            if(ReturnMapName() == "Origins")
-            {
-                add_anims = Array("ai_zombie_mech_ft_burn_player", "ai_zombie_mech_exit", "ai_zombie_mech_exit_hover", "ai_zombie_mech_arrive");
-                add_notifies = Array("flamethrower_anim", "zm_fly_out", "zm_fly_hover_finished", "zm_fly_in");
-            }
-            
-            if(IsDefined(add_anims) && add_anims.size)
-            {
-                anims = ArrayCombine(anims, add_anims, 0, 1);
-                notifies = ArrayCombine(notifies, add_notifies, 0, 1);
-            }
-
-            self addMenu("Animations");
-
-                for(a = 0; a < anims.size; a++)
-                    self addOpt(CleanString(anims[a]), &ZombieAnimScript, anims[a], notifies[a]);
-            break;
-        
-        case "Zombie Model Manipulation":
-            self addMenu("Model Manipulation");
-                
-                if(IsDefined(level.menu_models) && level.menu_models.size)
-                {
-                    self addOptBool(!IsDefined(level.ZombieModel), "Disable", &DisableZombieModel);
-                    self addOpt("");
-
-                    for(a = 0; a < level.menu_models.size; a++)
-                        self addOptBool((IsDefined(level.ZombieModel) && level.ZombieModel == level.menu_models[a]), CleanString(level.menu_models[a]), &SetZombieModel, level.menu_models[a]);
-                }
-            break;
-    }
-}
-
-function AIPrioritizePlayer(player)
-{
-    player endon("disconnect");
-        
-    player.AIPrioritizePlayer = BoolVar(player.AIPrioritizePlayer);
-    
-    if(Is_True(player.AIPrioritizePlayer))
-    {
-        if(Is_True(player.playerIgnoreMe))
-            NoTarget(player);
-        
-        while(Is_True(player.AIPrioritizePlayer))
-        {
-            if(!Is_True(player.b_is_designated_target))
-                player.b_is_designated_target = true;
-            
-            wait 0.1;
-        }
-    }
-    else
-    {
-        player.b_is_designated_target = false;
-    }
-}
-
-function SetZombiesDeathEffect(effect)
-{
-    if(!IsDefined(effect) || !IsString(effect) || effect == "" || IsDefined(level.ZombiesDeathFX) && level.ZombiesDeathFX == effect)
-        level.ZombiesDeathFX = undefined;
-    else
-        level.ZombiesDeathFX = effect;
-}
-
-function SetZombiesDamageEffect(effect)
-{
-    if(!IsDefined(effect) || !IsString(effect) || effect == "" || IsDefined(level.ZombiesDamageFX) && level.ZombiesDamageFX == effect)
-        level.ZombiesDamageFX = undefined;
-    else
-        level.ZombiesDamageFX = effect;
-}
-
-function ZombieAnimScript(anm, ntfy)
-{
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
-            continue;
-        
-        zombies[a] StopAnimScripted(0);
-        zombies[a] AnimScripted(ntfy, zombies[a].origin, zombies[a].angles, anm);
-    }
-}
-
-function SetZombieModel(model)
-{
-    if(IsDefined(level.ZombieModel) && model != level.ZombieModel || !IsDefined(level.ZombieModel))
-    {
-        level.ZombieModel = model;
-        zombies = GetAITeamArray(level.zombie_team);
-
-        if(IsDefined(zombies) && zombies.size)
-        {
-            foreach(zombie in zombies)
-            {
-                if(IsDefined(zombie) && IsAlive(zombie) && zombie.model != level.ZombieModel)
-                {
-                    if(!IsDefined(zombie.savedModel))
-                        zombie.savedModel = zombie.model;
-                    
-                    zombie SetModel(level.ZombieModel);
-                }
-            }
-        }
-
-        spawner::add_archetype_spawn_function("zombie", &SetZombieSpawnModel);
-    }
-    else
-    {
-        DisableZombieModel();
-    }
-}
-
-function SetZombieSpawnModel()
-{
-    while(!IsAlive(self))
-        wait 0.1;
-    
-    self.savedModel = self.model;
-
-    if(IsDefined(level.ZombieModel))
-        self SetModel(level.ZombieModel);
-}
-
-function DisableZombieModel()
-{
-    level.ZombieModel = undefined;
-    spawner::remove_global_spawn_function("zombie", &SetZombieSpawnModel);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(IsDefined(zombies) && zombies.size)
-    {
-        foreach(zombie in zombies)
-        {
-            if(IsDefined(zombie) && IsAlive(zombie) && IsDefined(zombie.savedModel))
-                zombie SetModel(zombie.savedModel);
-        }
-    }
-}
-
-function ZombieGibBone(bone)
-{
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
-            continue;
-        
-        switch(bone)
-        {
-            case "Random":
-                switch(RandomInt(5))
-                {
-                    case 0:
-                        zombies[a] thread zombie_utility::zombie_head_gib();
-                        break;
-                    
-                    case 1:
-                        thread gibserverutils::gibrightleg(zombies[a]);
-                        break;
-                    
-                    case 2:
-                        thread gibserverutils::gibleftleg(zombies[a]);
-                        break;
-                    
-                    case 3:
-                        thread gibserverutils::gibrightarm(zombies[a]);
-                        break;
-                    
-                    case 4:
-                        thread gibserverutils::gibleftarm(zombies[a]);
-                        break;
-                    
-                    default:
-                        zombies[a] thread zombie_utility::zombie_head_gib();
-                        break;
-                }
-                break;
-            
-            case "Head":
-                zombies[a] thread zombie_utility::zombie_head_gib();
-                break;
-            
-            case "Right Leg":
-                thread gibserverutils::gibrightleg(zombies[a]);
-                break;
-            
-            case "Left Leg":
-                thread gibserverutils::gibleftleg(zombies[a]);
-                break;
-            
-            case "Right Arm":
-                thread gibserverutils::gibrightarm(zombies[a]);
-                break;
-            
-            case "Left Arm":
-                thread gibserverutils::gibleftarm(zombies[a]);
-                break;
-            
-            default:
-                zombies[a] thread zombie_utility::zombie_head_gib();
-                break;
-        }
-    }
-}
-
-function KillZombies(type = "Death")
-{
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
-            continue;
-        
-        switch(type)
-        {
-            case "Death":
-                zombies[a] DoDamage((zombies[a].health + 666), zombies[a].origin);
-                break;
-            
-            case "Head Gib":
-                zombies[a] thread ZombieHeadGib();
-                break;
-            
-            case "Flame":
-                zombies[a] thread zombie_death::flame_death_fx();
-
-                if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-                    zombies[a] DoDamage((zombies[a].health + 666), zombies[a].origin);
-                break;
-            
-            case "Delete":
-                zombies[a] Delete();
-                break;
-            
-            default:
-                break;
-        }
-    }
-}
-
-function ZombieHeadGib()
-{
-    if(!IsDefined(self) || !IsAlive(self))
-        return;
-
-    self endon("death");
-
-    self clientfield::set("zm_bgb_mind_ray_fx", 1);
-    wait RandomFloatRange(0.65, 2.5);
-
-    self clientfield::set("zm_bgb_mind_pop_fx", 1);
-    self PlaySoundOnTag("zmb_bgb_mindblown_pop", "tag_eye");
-    self zombie_utility::zombie_head_gib();
-    wait 0.1;
-
-    if(IsDefined(self) && IsAlive(self))
-        self DoDamage((self.health + 666), self.origin);
-}
-
-function SetZombieHealth(type)
-{
-    switch(type)
-    {
-        case "Custom":
-            self thread NumberPad(&SetZombieSpawnHealth);
-            break;
-        
-        case "Reset":
-            spawner::remove_global_spawn_function("zombie", &EditZombieHealth);
-            level SetZombieHealth1(GetZombieHealthFromRound(level.round_number));
-            break;
-        
-        default:
-            break;
-    }
-}
-
-function SetZombieSpawnHealth(health)
-{
-    spawner::remove_global_spawn_function("zombie", &EditZombieHealth);
-    wait 0.1;
-
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || IsDefined(zombies[a].maxhealth) && zombies[a].maxhealth == health)
-            continue;
-        
-        zombies[a] thread EditZombieHealth(health);
-    }
-
-    //This will only apply to zombies that haven't spawned yet. The code above, will set the health of zombies that have already been spawned
-    spawner::add_archetype_spawn_function("zombie", &EditZombieHealth, health);
-}
-
-function EditZombieHealth(health)
-{
-    while(!IsDefined(self.maxhealth) && IsDefined(self) && IsAlive(self))
-        wait 0.1;
-    
-    if(IsDefined(self) && IsAlive(self))
-    {
-        self.maxhealth = health;
-        self.health = health;
-    }
-}
-
-function GetZombieHealthFromRound(round_number)
-{
-    zombie_health = level.zombie_vars["zombie_health_start"];
-
-    for(a = 2; a <= round_number; a++)
-    {
-        if(a >= 10)
-        {
-            old_health = zombie_health;
-            zombie_health = zombie_health + (Int(zombie_health * level.zombie_vars["zombie_health_increase_multiplier"]));
-
-            if(zombie_health < old_health)
-                return old_health;
-        }
-        else
-        {
-            zombie_health = Int(zombie_health + level.zombie_vars["zombie_health_increase"]);
-        }
-    }
-
-    return zombie_health;
-}
-
-function SetZombieHealth1(health)
-{
-    level.zombie_health = health;
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || IsDefined(zombies[a].maxhealth) && zombies[a].maxhealth == health)
-            continue;
-        
-        zombies[a].maxhealth = health;
-        zombies[a].health = zombies[a].maxhealth;
-    }
-}
-
-function SetZombieRunSpeed(speed)
-{
-    speed = ToLower(speed);
-
-    if(speed == "super sprint")
-        speed = "super_sprint";
-
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-            zombies[a] zombie_utility::set_zombie_run_cycle(speed);
-    }
-}
-
-function KnockdownZombies(dir)
-{
-    switch(dir)
-    {
-        case "Back":
-            knockDir = "front";
-            upDir = "getup_back";
-            break;
-        
-        case "Front":
-            knockDir = "back";
-            upDir = "getup_belly";
-            break;
-    }
-
-    if(!IsDefined(knockDir) || !IsDefined(upDir))
-        return;
-
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    foreach(zombie in zombies)
-    {
-        if(!IsDefined(zombie) || !IsAlive(zombie) || zombie.missinglegs || Is_True(zombie.knockdown))
-            continue;
-        
-        zombie.knockdown = 1;
-        zombie.knockdown_direction = knockDir;
-        zombie.getup_direction = upDir;
-        zombie.knockdown_type = "knockdown_shoved";
-
-        BlackBoardAttribute(zombie, "_knockdown_direction", zombie.knockdown_direction);
-        BlackBoardAttribute(zombie, "_knockdown_type", zombie.knockdown_type);
-        BlackBoardAttribute(zombie, "_getup_direction", zombie.getup_direction);
-    }
-}
-
-function PushZombies(dir)
-{
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    foreach(zombie in zombies)
-    {
-        if(!IsDefined(zombie) || !IsAlive(zombie) || zombie.missinglegs || Is_True(zombie.pushed))
-            continue;
-        
-        zombie.pushed = 1;
-        zombie.push_direction = ToLower(dir);
-
-        BlackBoardAttribute(zombie, "_push_direction", zombie.push_direction);
-    }
-}
-
-function BlackBoardAttribute(entity, attributename, attributevalue)
-{
-    if(!IsDefined(entity) || !IsDefined(entity.__blackboard))
-        return;
-    
-    if(IsDefined(entity.__blackboard[attributename]))
-    {
-        if(!IsDefined(attributevalue) && IsFunctionPtr(entity.__blackboard[attributename]))
-            return;
-    }
-
-    entity.__blackboard[attributename] = attributevalue;
-}
-
-function TeleportZombies(loc)
-{
-    origin = (((IsString(loc) && loc == "Crosshairs") ? self TraceBullet() : self.origin));
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-        {
-            zombies[a] StopAnimScripted(0);
-            zombies[a] ForceTeleport(origin);
-            zombies[a].find_flesh_struct_string = "find_flesh";
-            zombies[a].ai_state = "find_flesh";
-            zombies[a] notify("zombie_custom_think_done", "find_flesh");
-        }
-    }
-}
-
-function SetZombieAnimationSpeed(rate)
-{
-    spawner::remove_global_spawn_function("zombie", &ZombieAnimationWait);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(IsDefined(zombies) && zombies.size)
-    {
-        for(a = 0; a < zombies.size; a++)
-        {
-            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
-                continue;
-            
-            if(rate != 1)
-                zombies[a] thread ZombieAnimationWait(rate);
-            else
-                zombies[a] ASMSetAnimationRate(rate);
-        }
-    }
-
-    if(rate != 1)
-        spawner::add_archetype_spawn_function("zombie", &ZombieAnimationWait, rate);
-}
-
-function ZombieAnimationWait(rate)
-{
-    while(!CanControl(self) && IsAlive(self))
-        wait 0.1;
-    
-    if(IsDefined(self) && IsAlive(self))
-        self ASMSetAnimationRate(rate);
-}
-
-function ZombiesToCrosshairsLoop()
-{
-    level.ZombiesToCrosshairsLoop = BoolVar(level.ZombiesToCrosshairsLoop);
-
-    if(Is_True(level.ZombiesToCrosshairsLoop))
-    {
-        origin = self TraceBullet();
-
-        while(Is_True(level.ZombiesToCrosshairsLoop))
-        {
-            zombies = GetAITeamArray(level.zombie_team);
-
-            for(a = 0; a < zombies.size; a++)
-            {
-                if(IsDefined(zombies[a]) && IsAlive(zombies[a]) && IsActor(zombies[a]))
-                {
-                    zombies[a] StopAnimScripted(0);
-                    zombies[a] ForceTeleport(origin);
-                }
-            }
-
-            wait 0.05;
-        }
-    }
-}
-
-function DisableZombieCollision()
-{
-    level.DisableZombieCollision = BoolVar(level.DisableZombieCollision);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(Is_True(level.DisableZombieCollision))
-        spawner::add_archetype_spawn_function("zombie", &DisableZombieSpawnCollision);
-    else
-        spawner::remove_global_spawn_function("zombie", &DisableZombieSpawnCollision);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-            zombies[a] SetPlayerCollision(!Is_True(level.DisableZombieCollision));
-    }
-}
-
-function DisableZombieSpawnCollision()
-{
-    while(!IsAlive(self))
-        wait 0.1;
-    
-    self SetPlayerCollision(0);
-}
-
-function DisableZombieSpawning()
-{
-    SetDvar("ai_disableSpawn", ((GetDvarString("ai_disableSpawn") == "0") ? "1" : "0"));
-    KillZombies("Head Gib");
-}
-
-function DisableZombiePush()
-{
-    level.DisableZombiePush = BoolVar(level.DisableZombiePush);
-
-    if(Is_True(level.DisableZombiePush))
-    {
-        while(Is_True(level.DisableZombiePush))
-        {
-            foreach(player in level.players)
-                player SetClientPlayerPushAmount(0);
-
-            wait 0.1;
-        }
-    }
-    else
-    {
-        foreach(player in level.players)
-            player SetClientPlayerPushAmount(1);
-    }
-}
-
-function ZombiesInvisibility()
-{
-    level.ZombiesInvisibility = BoolVar(level.ZombiesInvisibility);
-
-    if(Is_True(level.ZombiesInvisibility))
-    {
-        while(Is_True(level.ZombiesInvisibility))
-        {
-            zombies = GetAITeamArray(level.zombie_team);
-
-            for(a = 0; a < zombies.size; a++)
-            {
-                if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-                    zombies[a] Hide();
-            }
-
-            wait 0.5;
-        }
-    }
-    else
-    {
-        zombies = GetAITeamArray(level.zombie_team);
-
-        for(a = 0; a < zombies.size; a++)
-        {
-            if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-                zombies[a] Show();
-        }
-    }
-}
-
-function FreezeZombies()
-{
-    SetDvar("g_ai", ((GetDvarString("g_ai") == "1") ? "0" : "1"));
-}
-
-function ZombieDeathSounds()
-{
-    level.ZombieDeathSounds = BoolVar(level.ZombieDeathSounds);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(Is_True(level.ZombieDeathSounds))
-        spawner::add_archetype_spawn_function("zombie", &ZombieDeathSound);
-    else
-        spawner::remove_global_spawn_function("zombie", &ZombieDeathSound);
-    
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-            zombies[a].bgb_tone_death = ((Is_True(level.ZombieDeathSounds) ? true : undefined));
-    }
-}
-
-function ZombieDeathSound()
-{
-    if(!IsDefined(self))
-        return;
-    
-    self.bgb_tone_death = true;
-}
-
-function ZombieProjectileVomiting()
-{
-    level.ZombieProjectileVomiting = BoolVar(level.ZombieProjectileVomiting);
-
-    while(Is_True(level.ZombieProjectileVomiting))
-    {
-        zombies = GetAITeamArray(level.zombie_team);
-
-        for(a = 0; a < zombies.size; a++)
-        {
-            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || Is_True(zombies[a].ProjectileVomit))
-                continue;
-            
-            zombies[a] thread ZombieProjectileVomit();
-        }
-
-        wait 0.1;
-    }
-}
-
-function ZombieProjectileVomit()
-{
-    if(!IsDefined(self) || !IsAlive(self) || Is_True(self.ProjectileVomit))
-        return;
-    
-    self endon("death");
-    
-    self.ProjectileVomit = true;
-    self clientfield::increment("projectile_vomit", 1);
-    wait 6;
-
-    if(Is_True(self.ProjectileVomit))
-        self.ProjectileVomit = BoolVar(self.ProjectileVomit);
-}
-
-function DisappearingZombies()
-{
-    level.DisappearingZombies = BoolVar(level.DisappearingZombies);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(Is_True(level.DisappearingZombies))
-    {
-        spawner::add_archetype_spawn_function("zombie", &ZombieSpawnDisappearingZombie);
-    }
-    else
-    {
-        spawner::remove_global_spawn_function("zombie", &ZombieSpawnDisappearingZombie);
-        level notify("EndDisappearingZombies");
-    }
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-        {
-            if(Is_True(level.DisappearingZombies))
-            {
-                zombies[a] thread DisappearingZombie();
-            }
-            else
-            {
-                if(Is_True(zombies[a].disappearing))
-                    zombies[a].disappearing = BoolVar(zombies[a].disappearing);
-
-                if(!Is_True(level.ZombiesInvisibility))
-                    zombies[a] Show();
-                else
-                    zombies[a] Hide();
-            }
-        }
-    }
-}
-
-function ZombieSpawnDisappearingZombie()
-{
-    while(!IsAlive(self))
-        wait 0.1;
-    
-    self thread DisappearingZombie();
-}
-
-function DisappearingZombie()
-{
-    if(Is_True(self.disappearing))
-        return;
-    self.disappearing = true;
-
-    if(!IsDefined(self) || !IsAlive(self))
-        return;
-    
-    level endon("EndDisappearingZombies");
-    
-    while(IsDefined(self) && IsAlive(self))
-    {
-        self Hide();
-        wait RandomFloatRange(1, 5);
-
-        if(IsDefined(self) && IsAlive(self))
-            self Show();
-        
-        wait RandomFloatRange(1, 5);
-    }
-}
-
-function ExplodingZombies()
-{
-    level.ExplodingZombies = BoolVar(level.ExplodingZombies);
-
-    if(Is_True(level.ExplodingZombies))
-    {
-        while(Is_True(level.ExplodingZombies))
-        {
-            zombies = GetAITeamArray(level.zombie_team);
-
-            for(a = 0; a < zombies.size; a++)
-            {
-                if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || Is_True(zombies[a].explodingzombie))
-                    continue;
-                
-                zombies[a].explodingzombie = true;
-                zombies[a] clientfield::set("arch_actor_fire_fx", 1);
-                zombies[a] thread ZombieBurnPlayers();
-            }
-            
-            wait 0.01;
-        }
-    }
-    else
-    {
-        zombies = GetAITeamArray(level.zombie_team);
-
-        for(a = 0; a < zombies.size; a++)
-        {
-            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || !Is_True(zombies[a].explodingzombie))
-                continue;
-            
-            zombies[a] clientfield::set("arch_actor_fire_fx", 0);
-            zombies[a].explodingzombie = BoolVar(zombies[a].explodingzombie);
-
-            if(Is_True(zombies[a].burnplayers))
-                zombies[a].burnplayers = BoolVar(zombies[a].burnplayers);
-        }
-    }
-}
-
-function ZombieBurnPlayers()
-{
-    if(Is_True(self.burnplayers))
-        return;
-    self.burnplayers = true;
-
-    self endon("death");
-
-    while(IsAlive(self) && Is_True(level.ExplodingZombies))
-    {
-        foreach(player in GetPlayers())
-        {
-            if(DistanceSquared(player.origin, self.origin) <= 9216 && !Is_True(player.is_burning) && zombie_utility::is_player_valid(player, 0))
-                player function_3389e2f3(self);
-        }
-
-        wait 0.1;
-    }
-}
-
-function ZombieRagdoll()
-{
-    level.ZombieRagdoll = BoolVar(level.ZombieRagdoll);
-}
-
-function StackZombies()
-{
-    level endon("EndStackZombies");
-    
-    level.StackZombies = BoolVar(level.StackZombies);
-
-    if(Is_True(level.StackZombies))
-    {
-        while(Is_True(level.StackZombies))
-        {
-            zombies = GetAITeamArray(level.zombie_team);
-
-            for(a = 0; a < zombies.size; a++)
-            {
-                if(!CanControl(zombies[a]) || Is_True(zombies[a].stacked))
-                    continue;
-                
-                tag = "tag_origin"; //Had to choose a tag that doesn't move/rotate
-                tagCheck = zombies[a] GetTagOrigin(tag); //Gonna be used to make sure it's a valid tag for the ai
-                offset = (0, 0, 70); //(x, y, z) offset for the given tag
-
-                if(!IsDefined(tagCheck))
-                {
-                    tag = "tag_body"; //Backup tag for ai that don't have the default tag given
-                    tagCheck = zombies[a] GetTagOrigin(tag);
-                }
-
-                if(!IsDefined(tagCheck)) //If the backup tag can't be used for the AI, then it will be skipped
-                    continue;
-                
-                bottom = zombies[a];
-                top = undefined;
-
-                for(b = 0; b < zombies.size; b++)
-                {
-                    if(!CanControl(zombies[b]) || Is_True(zombies[b].stacked) || IsDefined(zombies[b]) && zombies[b] == bottom)
-                        continue;
-                    
-                    top = zombies[b];
-                    break;
-                }
-
-                if(IsDefined(bottom) && IsDefined(top))
-                {
-                    top LinkTo(bottom, tag, offset);
-                    bottom thread StackedZombieWatcher(top);
-
-                    top.stacked = true;
-                    bottom.stacked = true;
-                }
-            }
-
-            wait 1;
-        }
-    }
-    else
-    {
-        zombies = GetAITeamArray(level.zombie_team);
-
-        for(a = 0; a < zombies.size; a++)
-        {
-            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || !Is_True(zombies[a].stacked))
-                continue;
-            
-            zombies[a] Unlink();
-
-            if(Is_True(zombies[a].stacked))
-                zombies[a].stacked = BoolVar(zombies[a].stacked);
-        }
-
-        level notify("EndStackZombies");
-    }
-}
-
-function StackedZombieWatcher(top)
-{
-    if(!IsDefined(self) || !IsAlive(self) || !IsDefined(top) || !IsAlive(top))
-        return;
-    
-    level endon("EndStackZombies");
-    top endon("death");
-
-    self waittill("death");
-
-    if(IsDefined(top) && IsAlive(top))
-    {
-        top Unlink();
-
-        if(Is_True(top.stacked))
-            top.stacked = BoolVar(top.stacked);
-    }
-}
-
-function RemoveZombieEyes()
-{
-    level.RemoveZombieEyes = BoolVar(level.RemoveZombieEyes);
-    zombies = GetAITeamArray(level.zombie_team);
-
-    if(Is_True(level.RemoveZombieEyes))
-    {
-        spawner::add_archetype_spawn_function("zombie", &ZombieSpawnNoEyes);
-
-        foreach(zombie in zombies)
-        {
-            if(!IsDefined(zombie) || !IsAlive(zombie) || Is_True(zombie.no_eye_glow))
-                continue;
-            
-            zombie clientfield::set("zombie_has_eyes", 0);
-            zombie.no_eye_glow = true;
-        }
-    }
-    else
-    {
-        spawner::remove_global_spawn_function("zombie", &ZombieSpawnNoEyes);
-
-        foreach(zombie in zombies)
-        {
-            if(!IsDefined(zombie) || !IsAlive(zombie) || !Is_True(zombie.no_eye_glow))
-                continue;
-            
-            zombie clientfield::set("zombie_has_eyes", 1);
-            zombie.no_eye_glow = false;
-        }
-    }
-}
-
-function ZombieSpawnNoEyes()
-{
-    if(Is_True(self.no_eye_glow))
-        return;
-    
-    self clientfield::set("zombie_has_eyes", 0);
-    self.no_eye_glow = true;
-}
-
-function BodiesFloat()
-{
-    SetDvar("phys_gravity_dir", ((GetDvarVector("phys_gravity_dir") == (0, 0, -1)) ? (0, 0, 1) : (0, 0, -1)));
-}
-
-function ForceZombieCrawlers()
-{
-    zombies = GetAITeamArray(level.zombie_team);
-
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-            zombies[a] zombie_utility::makezombiecrawler(true);
-    }
-}
-
-function DetachZombieHeads()
-{
-    zombies = GetAITeamArray(level.zombie_team);
-    
-    for(a = 0; a < zombies.size; a++)
-    {
-        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
-            zombies[a] DetachAll();
-    }
-}
-
-function ServerClearCorpses()
-{
-    corpse_array = GetCorpseArray();
-
-    if(IsDefined(corpse_array) && corpse_array.size)
-    {
-        for(a = 0; a < corpse_array.size; a++)
-        {
-            if(IsDefined(corpse_array[a]))
-                corpse_array[a] Delete();
-        }
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//drop_tower.gsc
-function SpawnDropTower()
-{
-    if(Is_True(level.spawnable["Drop Tower_Spawned"]))
-        return false;
-
-    model = GetSpawnableBaseModel();
-    seatModel = ((isInArray(level.menu_models, "test_sphere_silver") ? "test_sphere_silver" : "defaultactor"));
-    origin = self TraceBullet();
-
-    base = [];
-    towerSeats = [];
-
-    towerSeatAttach = SpawnScriptModel(origin + (0, 0, 15), "tag_origin");
-
-    if(!IsDefined(towerSeatAttach))
-        return false;
-    
-    towerSeatAttach SpawnableArray("Drop Tower");
-
-    for(a = 0; a < 30; a++)
-    {
-        for(b = 0; b < 10; b++)
-        {
-            base[base.size] = SpawnScriptModel(origin + (Cos(b * 36) * 27, Sin(b * 36) * 27, (a * 80)), model, (0, (36 * b), 0), 0.01);
-
-            if(!IsDefined(base[(base.size - 1)]))
-                return false;
-        }
-    }
-
-    array::thread_all(base, &SpawnableArray, "Drop Tower");
-    seatsCount = 8;
-
-    for(a = 0; a < seatsCount; a++)
-    {
-        towerSeats[towerSeats.size] = SpawnScriptModel(origin + (Cos(a * (360 / seatsCount)) * 75, Sin(a * (360 / seatsCount)) * 75, 5), seatModel, (0, ((360 / seatsCount) * a), 0), 0.01);
-
-        if(IsDefined(towerSeats[(towerSeats.size - 1)]) && seatModel != "defaultactor")
-            towerSeats[(towerSeats.size - 1)] SetScale(6);
-        
-        if(!IsDefined(towerSeats[(towerSeats.size - 1)]))
-            return false;
-    }
-
-    array::thread_all(towerSeats, &SpawnableArray, "Drop Tower");
-
-    if(IsDefined(towerSeatAttach))
-    {
-        foreach(seat in towerSeats)
-            seat LinkTo(towerSeatAttach);
-
-        towerSeatAttach thread startDropMovement();
-    }
-    else
-    {
-        return false;
-    }
-
-    array::thread_all(towerSeats, &SeatSystem, "Drop Tower");
-    return true;
-}
-
-function startDropMovement()
-{
-    self endon("death");
-    level endon("Drop Tower_Stop");
-
-    while(IsDefined(self))
-    {
-        wait 5;
-        self MoveTo(self.origin + (0, 0, 2385), 20);
-        self RotateYaw(360, 20);
-
-        self waittill("movedone");
-        Earthquake(0.4, 1, self.origin, 500);
-        wait 2;
-
-        for(a = 0; a < 5; a++)
-        {
-            Earthquake(0.3, 1, self.origin, 500);
-            wait 1;
-        }
-
-        self MoveTo(self.origin + (0, 0, -2385), 0.55);
-        self RotateYaw(-360, 0.55);
-
-        self waittill("movedone");
-        Earthquake(0.6, 1, self.origin, 500);
-        wait 5;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//merry_go_round.gsc
-function SpawnMerryGoRound()
-{
-    if(Is_True(level.spawnable["Merry Go Round_Spawned"]))
-        return false;
-
-    model = GetSpawnableBaseModel("vending_three_gun");
-    seatModel = ((isInArray(level.menu_models, "test_sphere_silver") ? "test_sphere_silver" : "defaultactor"));
-    origin = self TraceBullet();
-    level.MerryGoRoundSpeed = 10;
-
-    SeatsLinker = [];
-    base = [];
-    platforms = [];
-    seats = [];
-
-    MerryGoRoundLinker = SpawnScriptModel(origin + (0, 0, 15), "tag_origin", (0, 0, 0));
-
-    if(!IsDefined(MerryGoRoundLinker))
-        return false;
-
-    MerryGoRoundLinker SpawnableArray("Merry Go Round");
-
-    for(a = 0; a < 2; a++)
-    {
-        SeatsLinker[a] = SpawnScriptModel(origin + (0, 0, 15), "tag_origin");
-
-        if(!IsDefined(SeatsLinker[a]))
-            return false;
-    }
-
-    array::thread_all(SeatsLinker, &SpawnableArray, "Merry Go Round");
-
-    for(a = 0; a < 4; a++)
-    {
-        for(b = 0; b < 10; b++)
-        {
-            base[base.size] = SpawnScriptModel(origin + (Cos(b * 36) * 27, Sin(b * 36) * 27, ((a * 55) + 25)), model, (0, (36 * b), 0), 0.01);
-
-            if(!IsDefined(base[(base.size - 1)]))
-                return false;
-        }
-    }
-
-    array::thread_all(base, &SpawnableArray, "Merry Go Round");
-
-    for(a = 0; a < 2; a++)
-    {
-        for(b = 0; b < 12; b++)
-        {
-            platforms[platforms.size] = SpawnScriptModel(origin + (0, 0, (a * 250)), model, (0, (30 * b), 90), 0.01);
-
-            if(IsDefined(platforms[(platforms.size - 1)]))
-            {
-                platforms[(platforms.size - 1)] LinkTo(MerryGoRoundLinker);
-                platforms[(platforms.size - 1)] SetScale(2);
-            }
-            else
-            {
-                return false;
-            }
-        }
-    }
-
-    array::thread_all(platforms, &SpawnableArray, "Merry Go Round");
-
-    for(a = 0; a < platforms.size; a++)
-    {
-        if(IsDefined(platforms[a]))
-            platforms[a] LinkTo(MerryGoRoundLinker);
-        else
-            return false;
-    }
-
-    for(a = 0; a < 10; a++)
-    {
-        seats[seats.size] = SpawnScriptModel(origin + (Cos((a * 360) / 10) * 150, Sin((a * 360) / 10) * 150, 45), seatModel, (0, (36 * a), 0), 0.01);
-
-        if(IsDefined(seats[(seats.size - 1)]) && seatModel != "defaultactor")
-            seats[(seats.size - 1)] SetScale(6);
-        
-        if(!IsDefined(seats[(seats.size - 1)]))
-            return false;
-    }
-
-    array::thread_all(seats, &SpawnableArray, "Merry Go Round");
-
-    for(a = 0; a < seats.size; a++)
-    {
-        if(!IsDefined(seats[a]))
-            return false;
-
-        seats[a] LinkTo(SeatsLinker[(a % 2 ? 0 : 1)]);
-    }
-    
-    if(!IsDefined(MerryGoRoundLinker))
-        return false;
-    
-    MerryGoRoundLinker thread RotateMerryYaw();
-
-    array::thread_all(SeatsLinker, &RotateMerryYaw);
-    array::thread_all(seats, &SeatSystem, "Merry Go Round");
-
-    for(a = 0; a < SeatsLinker.size; a++)
-    {
-        if(IsDefined(SeatsLinker[a]))
-        {
-            SeatsLinker[a] thread SeatsMove(origin[2] + 45);
-            wait 0.6;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-function RotateMerryYaw()
-{
-    level endon("Merry Go Round_Stop");
-
-    while(IsDefined(self))
-    {
-        self RotateYaw(360, level.MerryGoRoundSpeed);
-        wait level.MerryGoRoundSpeed;
-    }
-}
-
-function SetMerryGoRoundSpeed(speed)
-{
-    speeds = Array(0, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
-    level.MerryGoRoundSpeed = speeds[speed];
-
-    if(Is_True(level.spawnable["Merry Go Round_Spawned"]))
-        self iPrintlnBold("^1NOTE: ^7This Might Take A Few Seconds To Take Effect");
-}
-
-function SeatsMove(origin)
-{
-    self endon("death");
-    level endon("Merry Go Round_Stop");
-
-    while(IsDefined(self))
-    {
-        self MoveZ(((self.origin[2] > origin) ? -50 : 50), 0.65);
-        wait 0.6;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//skybase.gsc
-function SpawnSkybase()
-{
-    if(Is_True(level.spawnable["Skybase_Spawned"]))
-        return false;
-    
-    //These values control the size of the base
-    x = 10;
-    y = 5;
-
-    //DON'T CHANGE THESE VALUES
-    width = 51;
-    height = 90;
-
-    origin = GetSkybaseOriginForMap();
-    model = GetSpawnableBaseModel("vending_doubletap");
-    location = ((!IsVec(origin) || !IsDefined(level.SkybaseLocation)) ? "Custom" : level.SkybaseLocation);
-
-    if(location == "Custom")
-    {
-        self closeMenu1();
-
-        cancel = false;
-        distance = 650;
-        cfIndex = Int(Pow(2, RandomInt(3)));
-
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), distance), 0, self)["position"];
-
-        goalPos = SpawnScriptModel(trace, "tag_origin");
-        goalPos clientfield::set("powerup_fx", cfIndex);
-
-        if(!IsDefined(goalPos))
-            return false;
-
-        self.DisableMenuControls = true;
-        self SetMenuInstructions(Array("[{+attack}] - Increase Distance", "[{+speed_throw}] - Decrease Distance", "[{+activate}] - Confirm Location", "[{+melee}] - Cancel"));
-
-        preview = [];
-
-        for(a = 0; a < x; a++)
-        {
-            for(b = 0; b < y; b++)
-            {
-                preview[preview.size] = SpawnScriptModel(trace + ((a * width), (b * height), 0), "tag_origin", (0, 0, 0));
-
-                if(IsDefined(preview[(preview.size - 1)]))
-                {
-                    preview[(preview.size - 1)] clientfield::set("powerup_fx", cfIndex);
-                    preview[(preview.size - 1)] LinkTo(goalPos);
-                }
-                else
-                {
-                    return false;
-                }
-
-                wait 0.01;
-            }
-        }
-
-        while(1)
-        {
-            if(!IsDefined(goalPos))
-            {
-                cancel = true;
-                break;
-            }
-
-            start = self GetWeaponMuzzlePoint();
-
-            if(!IsDefined(start) || !IsVec(start))
-                start = self GetEye();
-            
-            trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), distance), 0, self)["position"];
-            goalPos.origin = trace;
-
-            if(self AttackButtonPressed())
-            {
-                distance += 25;
-            }
-            else if(self AdsButtonPressed())
-            {
-                distance -= 25;
-            }
-            else if(self UseButtonPressed())
-            {
-                origin = trace;
-                break;
-            }
-            else if(self MeleeButtonPressed())
-            {
-                cancel = true;
-                break;
-            }
-
-            if(distance < 100)
-                distance = 100;
-            else if(distance > 2500)
-                distance = 2500;
-
-            wait 0.01;
-        }
-
-        if(IsDefined(goalPos))
-            goalPos Delete();
-        
-        if(IsDefined(preview) && preview.size)
-        {
-            for(a = 0; a < preview.size; a++)
-            {
-                if(IsDefined(preview[a]))
-                    preview[a] Delete();
-            }
-        }
-        
-        if(Is_True(self.DisableMenuControls))
-            self.DisableMenuControls = BoolVar(self.DisableMenuControls);
-        
-        self SetMenuInstructions();
-
-        if(Is_True(cancel))
-            return false;
-    }
-
-    if(!IsDefined(origin) || !IsVec(origin) || origin == (0, 0, 0))
-        return false;
-    
-    level.SkybaseOrigin = origin;
-    level.skybaseLinker = SpawnScriptModel(origin, "tag_origin");
-
-    if(!IsDefined(level.skybaseLinker))
-        return false;
-
-    floor = [];
-    roof = [];
-    walls = [];
-    corners = [];
-
-    for(a = 0; a < x; a++)
-    {
-        for(b = 0; b < y; b++)
-        {
-            floor[floor.size] = SpawnScriptModel(origin + ((a * width), (b * height), 0), model, (0, 0, 90), 0.01);
-
-            if(!IsDefined(floor[(floor.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                floor[(floor.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    array::thread_all(floor, &SpawnableArray, "Skybase");
-
-    for(a = 0; a < x; a++)
-    {
-        for(b = 0; b < y; b++)
-        {
-            roof[roof.size] = SpawnScriptModel(origin + ((a * width), (b * height), (height + 35)), model, (180, 0, 90), 0.01);
-
-            if(!IsDefined(roof[(roof.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                roof[(roof.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    array::thread_all(roof, &SpawnableArray, "Skybase");
-
-    for(a = 0; a < 2; a++)
-    {
-        for(b = 0; b < y; b++)
-        {
-            walls[walls.size] = SpawnScriptModel(origin + (-25 + ((width * x) * a) + (10 * a), (b * height), 19), model, (90 - (180 * a), 0, 90), 0.01);
-
-            if(!IsDefined(walls[(walls.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                walls[(walls.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    for(a = 0; a < 2; a++)
-    {
-        for(b = 0; b < (x - 4); b++)
-        {
-            walls[walls.size] = SpawnScriptModel(origin + (5 + width + (b * height), (height * -1) + ((height * y) * a), 19), model, (-90 + (180 * a), 0, 0 - (180 * a)), 0.01);
-
-            if(!IsDefined(walls[(walls.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                walls[(walls.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    array::thread_all(walls, &SpawnableArray, "Skybase");
-
-    for(a = 0; a < 2; a++)
-    {
-        for(b = 0; b < 2; b++)
-        {
-            corners[corners.size] = SpawnScriptModel(origin + (0 - (((25 * b) + (25 * a)) - ((50 * a) * b)), (height * -1) + (15 * b) + (((height * y) - 15) * a), 44), model, (0, 0 - ((b * 90) + (a * 90)), 0), 0.01);
-
-            if(!IsDefined(corners[(corners.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                corners[(corners.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    for(a = 0; a < 2; a++)
-    {
-        for(b = 0; b < 2; b++)
-        {
-            corners[corners.size] = SpawnScriptModel(origin + ((width * (x - 1)) + (((36 * b) + (36 * a)) - ((72 * a) * b)), (height * -1) + (15 * b) + (((height * y) - 15) * a), 44), model, (0, 0 + ((b * 90) + (a * 90)), 0), 0.01);
-
-            if(!IsDefined(corners[(corners.size - 1)]))
-                return false;
-            
-            if(IsDefined(level.skybaseLinker))
-                corners[(corners.size - 1)] LinkTo(level.skybaseLinker);
-        }
-    }
-
-    array::thread_all(corners, &SpawnableArray, "Skybase");
-
-    //SpawnProp(origin = (0, 0, 0), model = "defaultactor", angles = (0, 0, 0), bounce = true, glow = true, triggerFunction, hintString)
-    bottle = SpawnProp(origin + (10, (55 * (y + 1)), 55), GetSpawnablePerkBottle(), (0, 0, 0), true, true, &SkybasePerkTrigger, "Press [{+activate}] For All Perks");
-
-    if(!IsDefined(bottle))
-        return false;
-
-    level.skybaseProps = Array(bottle);
-    array::thread_all(level.skybaseProps, &SpawnableArray, "Skybase");
-    
-
-    return true;
-}
-
-function SkybasePerkTrigger()
-{
-    MenuPerks = [];
-    perks = GetArrayKeys(level._custom_perks);
-
-    for(a = 0; a < perks.size; a++)
-        array::add(MenuPerks, perks[a], 0);
-    
-    if(IsDefined(self.perks_active) && self.perks_active.size == MenuPerks.size)
-        return;
-    
-    PlayerAllPerks(self);
-}
-
-function SpawnSkybaseTeleporter()
-{
-    if(Is_True(level.spawnable["Skybase_Building"]) || Is_True(level.spawnable["Skybase_Dismantle"]) || Is_True(level.spawnable["Skybase_Deleted"]) || !Is_True(level.spawnable["Skybase_Spawned"]))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option Right Now");
-
-    if(!IsDefined(level.SkybaseTeleporters) || !level.SkybaseTeleporters.size)
-    {
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        traceSurface = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
-
-        if(traceSurface == "none" || traceSurface == "default")
-            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-
-        crosshairs = self TraceBullet();
-        level.SkybaseTeleporters = [];
-
-        for(a = 0; a < 2; a++)
-            level.SkybaseTeleporters[level.SkybaseTeleporters.size] = SpawnTeleporter("Spawn", (a ? (level.SkybaseOrigin + (20, -45, 45)) : (crosshairs + (0, 0, 45))), !a, true);
-    }
-    else
-    {
-        foreach(teleporter in level.SkybaseTeleporters)
-            teleporter Delete();
-
-        level.SkybaseTeleporters = undefined;
-    }
-}
-
-function SkybaseLocation(location)
-{
-    level.SkybaseLocation = location;
-}
-
-function GetSkybaseOriginForMap()
-{
-    map = ReturnMapName();
-
-    switch(map)
-    {
-        case "Shadows Of Evil":
-            return (2546, -5263, 450);
-
-        case "The Giant":
-            return (-230, -515, 522);
-        
-        case "Der Eisendrache":
-            return (-754, 342, 877);
-
-        case "Zetsubou No Shima":
-            return (3407, 1277, -475);
-        
-        case "Gorod Krovi":
-            return (-218, -803, 216);
-
-        case "Revelations":
-            return (271, -864, -272);
-
-        case "Nacht Der Untoten":
-            return (1182, 572, 296);
-
-        case "Verruckt":
-            return (16, -69, 308);
-
-        case "Shi No Numa":
-            return (10165, 974, -268);
-
-        case "Kino Der Toten":
-            return (-360, 328, 239);
-
-        case "Ascension":
-            return (-2461, 1682, 361);
-
-        case "Shangri-La":
-            return (-2401, -1066, -162);
-
-        case "Moon":
-            return (21835, -37689, -529);
-
-        case "Origins":
-            return (294.5, 1213, 557);
-        
-        default:
-            return "invalid";
-    }
-}
-
-function MoveSkybase(amount = 0, axis = "X")
-{
-    if(Is_True(level.spawnable["Skybase_Building"]))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Move The Skybase While It's Being Built");
-    
-    if(!Is_True(level.spawnable["Skybase_Spawned"]))
-        return self iPrintlnBold("^1ERROR: ^7The Skybase Hasn't Been Spawned Yet");
-    
-    if(Is_True(level.spawnable["Skybase_Dismantle"]) || Is_True(level.spawnable["Skybase_Deleted"]))
-        return self iPrintlnBold("^1ERROR: ^7You Can't Move The Skybase Right Now");
-    
-    if(!IsDefined(level.skybaseLinker))
-        return self iPrintlnBold("^1ERROR: ^7Failed To Move Skybase");
-    
-    switch(axis)
-    {
-        case "X":
-            level.skybaseLinker.origin += (amount, 0, 0);
-
-            if(IsDefined(level.SkybaseOrigin))
-                level.SkybaseOrigin += (amount, 0, 0);
-
-            for(a = 0; a < level.skybaseProps.size; a++)
-            {
-                if(IsDefined(level.skybaseProps[a]))
-                {
-                    level.skybaseProps[a].origin += (amount, 0, 0);
-
-                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
-                        level.skybaseProps[a].original_origin += (amount, 0, 0);
-                }
-            }
-            break;
-        
-        case "Y":
-            level.skybaseLinker.origin += (0, amount, 0);
-
-            if(IsDefined(level.SkybaseOrigin))
-                level.SkybaseOrigin += (0, amount, 0);
-
-            for(a = 0; a < level.skybaseProps.size; a++)
-            {
-                if(IsDefined(level.skybaseProps[a]))
-                {
-                    level.skybaseProps[a].origin += (0, amount, 0);
-
-                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
-                        level.skybaseProps[a].original_origin += (0, amount, 0);
-                }
-            }
-            break;
-        
-        case "Z":
-            level.skybaseLinker.origin += (0, 0, amount);
-
-            if(IsDefined(level.SkybaseOrigin))
-                level.SkybaseOrigin += (0, 0, amount);
-
-            for(a = 0; a < level.skybaseProps.size; a++)
-            {
-                if(IsDefined(level.skybaseProps[a]))
-                {
-                    level.skybaseProps[a].origin += (0, 0, amount);
-
-                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
-                        level.skybaseProps[a].original_origin += (0, 0, amount);
-                }
-            }
-            break;
-        
-        default:
-            break;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//spawnable_system.gsc
-function PopulateSpawnables(menu)
-{
-    switch(menu)
-    {
-        case "Spawnables":
-            if(!IsDefined(level.spawnable))
-                level.spawnable = [];
-
-            self addMenu(menu);
-                self addOpt("Rain Options", &newMenu, "Rain Options");
-                self addOpt("Small Spawnables", &newMenu, "Small Spawnables");
-                self addOpt("Large Spawnables", &newMenu, "Large Spawnables");
-            break;
-        
-        case "Rain Options":
-            self addMenu(menu);
-                self addOpt("Disable", &DisableLobbyRain);
-                self addOpt("Models", &newMenu, "Rain Models");
-                self addOpt("Effects", &newMenu, "Rain Effects");
-                self addOpt("Projectiles", &newMenu, "Rain Projectiles");
-
-                if(IsDefined(level.zombie_include_powerups) && level.zombie_include_powerups.size)
-                    self addOptBool(level.RainPowerups, "Rain Power-Ups", &RainPowerups);
-            break;
-        
-        case "Rain Models":
-            self addMenu("Models");
-
-                if(IsDefined(level.menu_models) && level.menu_models.size)
-                {
-                    for(a = 0; a < level.menu_models.size; a++)
-                    {
-                        isCurrent = (IsDefined(level.LobbyRainType) && level.LobbyRainType == "Model" && IsDefined(level.LobbyRain) && level.LobbyRain == level.menu_models[a]);
-                        self addOptBool(isCurrent, CleanString(level.menu_models[a]), &LobbyRain, "Model", level.menu_models[a]);
-                    }
-                }
-            break;
-        
-        case "Rain Effects":
-            self addMenu("Effects");
-
-                for(a = 0; a < level.menuFX.size; a++)
-                {
-                    isCurrent = (IsDefined(level.LobbyRainType) && level.LobbyRainType == "FX" && IsDefined(level.LobbyRain) && level.LobbyRain == level.menuFX[a]);
-                    self addOptBool(isCurrent, CleanString(level.menuFX[a]), &LobbyRain, "FX", level.menuFX[a]);
-                }
-            break;
-        
-        case "Rain Projectiles":
-            self addMenu("Projectiles");
-
-                if(!IsVerkoMap())
-                {
-                    arr = [];
-                    weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
-                    weaps = GetArrayKeys(level.zombie_weapons);
-
-                    if(IsDefined(weaps) && weaps.size)
-                    {
-                        for(a = 0; a < weaps.size; a++)
-                        {
-                            if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(weaps[a])))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
-                            {
-                                strn = ((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name);
-                                
-                                if(!IsInArray(arr, strn))
-                                {
-                                    arr[arr.size] = strn;
-                                    isCurrent = (IsDefined(level.LobbyRainType) && level.LobbyRainType == "Projectile" && IsDefined(level.LobbyRain) && level.LobbyRain == weaps[a]);
-
-                                    self addOptBool(isCurrent, strn, &LobbyRain, "Projectile", weaps[a]);
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    for(a = 0; a < level.var_21b77150.size; a++)
-                        self addOpt(level.var_7df703ba[a], &LobbyRain, "Projectile", GetWeapon(level.var_21b77150[a]));
-                }
-            break;
-        
-        case "Small Spawnables":
-            self addMenu(menu);
-                self addOptBool(level.TornadoSpawned, "Tornado", &Tornado);
-                self addOptIncSlider("Mexican Wave", &MexicanWave, 2, 2, 15, 1);
-                self addOptIncSlider("Spiral Staircase", &SpiralStaircase, 5, 5, 50, 1);
-                self addOptSlider("Teleporter", &SpawnTeleporter, Array("Spawn", "Delete All"));
-            break;
-        
-        case "Large Spawnables":
-            self addMenu(menu);
-                self addOpt("Skybase", &newMenu, "Skybase");
-                self addOptSlider("Drop Tower", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Drop Tower", &SpawnDropTower);
-                self addOptSlider("Merry Go Round", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Merry Go Round", &SpawnMerryGoRound);
-
-                if(IsDefined(level.spawnable["Merry Go Round_Spawned"]))
-                    self addOptIncSlider("Merry Go Round Speed", &SetMerryGoRoundSpeed, 1, 1, 10, 1);
-            break;
-        
-        case "Skybase":
-            self addMenu(menu);
-                baseOrigin = GetSkybaseOriginForMap();
-                
-                if(!IsDefined(level.SkybaseLocation))
-                    level.SkybaseLocation = (IsVec(baseOrigin) ? "Pre-Set" : "Custom");
-
-                self addOptSlider("Skybase", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Skybase", &SpawnSkybase);
-                self addOptSlider("Location", &SkybaseLocation, (IsVec(baseOrigin) ? Array("Pre-Set", "Custom") : Array("Custom")));
-                self addOptBool((IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size), "Spawn Skybase Teleporter", &SpawnSkybaseTeleporter);
-                
-                self addOpt("");
-                self addOptIncSlider("Move X", &MoveSkybase, -25, 0, 25, 1, "X");
-                self addOptIncSlider("Move Y", &MoveSkybase, -25, 0, 25, 1, "Y");
-                self addOptIncSlider("Move Z", &MoveSkybase, -25, 0, 25, 1, "Z");
-            break;
-    }
-}
-
-function SpawnSystem(action, type, func)
-{
-    checkModel = GetSpawnableBaseModel();
-
-    if(!IsDefined(checkModel))
-        return self iPrintlnBold("^1ERROR: ^7Couldn't Find A Valid Base Model For Spawnables");
-
-    if(!IsDefined(level.spawnable))
-        level.spawnable = [];
-
-    if(Is_True(level.spawnable[type + "_Building"]))
-        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Built");
-
-    if(Is_True(level.spawnable[type + "_Dismantle"]))
-        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Dismantled");
-
-    if(Is_True(level.spawnable[type + "_Deleted"]))
-        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Deleted");
-
-    if(!Is_True(level.spawnable[type + "_Spawned"]) && type != "Skybase")
-    {
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        traceSurface = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
-
-        if(traceSurface == "none" || traceSurface == "default")
-            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-    }
-
-    if(action != "Spawn")
-    {
-        if(!Is_True(level.spawnable[type + "_Spawned"]))
-            return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Hasn't Been Spawned Yet");
-    }
-    else
-    {
-        if(IsDefined(level.spawnable["LargeSpawnable"]) && isLargeSpawnable(type))
-            return self iPrintlnBold("^1ERROR: ^7You Must Delete The " + level.spawnable["LargeSpawnable"] + " First");
-
-        if(Is_True(level.spawnable[type + "_Spawned"]))
-            return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Has Already Been Spawned");
-    }
-
-    if(IsDefined(level.SpawnableSystemBusy))
-        return self iPrintlnBold("^1ERROR: ^7The Spawnable System Is Currently Busy");
-
-    level.SpawnableSystemBusy = type;
-
-    menu = self getCurrent();
-    curs = self getCursor();
-
-    if(!IsDefined(level.SpawnableArray))
-        level.SpawnableArray = [];
-    
-    if(!IsDefined(level.SpawnableArray[type]))
-        level.SpawnableArray[type] = [];
-
-    switch(action)
-    {
-        case "Spawn":
-            if(isLargeSpawnable(type))
-                level.spawnable["LargeSpawnable"] = type;
-
-            level.spawnable[type + "_Building"] = true;
-
-            if(IsDefined(func) && IsFunctionPtr(func))
-                built = self [[ func ]]();
-            
-            if(Is_True(level.spawnable[type + "_Building"]))
-                level.spawnable[type + "_Building"] = BoolVar(level.spawnable[type + "_Building"]);
-            
-            if(!IsDefined(func) || !IsFunctionPtr(func) || !Is_True(built))
-            {
-                DeleteSpawnable(type, "Delete");
-                self iPrintlnBold("^1ERROR: ^7Failed To Spawn " + type);
-            }
-            else
-            {
-                level.spawnable[type + "_Spawned"] = true;
-            }
-
-            break;
-
-        case "Delete":
-            DeleteSpawnable(type, action);
-            break;
-
-        case "Dismantle":
-            if(IsDefined(level.SpawnableArray[type]) && level.SpawnableArray[type].size)
-            { 
-                for(a = 0; a < level.SpawnableArray[type].size; a++)
-                {
-                    if(!IsDefined(level.SpawnableArray[type][a]))
-                        continue;
-
-                    if(Is_True(level.SpawnableArray[type][a].propActivated))
-                        level.SpawnableArray[type][a].propActivated = false;
-                    
-                    level.SpawnableArray[type][a] NotSolid();
-                    level.SpawnableArray[type][a] Unlink();
-                    level.SpawnableArray[type][a] Launch(VectorScale(AnglesToForward(level.SpawnableArray[type][a].angles), RandomIntRange(-255, 255)));
-                }
-            }
-
-            if(type == "Skybase")
-            {
-                if(IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size)
-                {
-                    for(a = 0; a < level.SkybaseTeleporters.size; a++)
-                    {
-                        if(!IsDefined(level.SkybaseTeleporters[a]))
-                            continue;
-
-                        level.SkybaseTeleporters[a] Unlink();
-                        level.SkybaseTeleporters[a] Launch(VectorScale(AnglesToForward(level.SkybaseTeleporters[a].angles), RandomIntRange(-255, 255)));
-                    }
-                }
-            }
-
-            DeleteSpawnable(type, action);
-            break;
-
-        default:
-            break;
-    }
-
-    level.SpawnableSystemBusy = undefined;
-    RefreshMenu(menu, curs);
-}
-
-function DeleteSpawnable(spawn, type)
-{
-    level notify(spawn + "_Stop");
-
-    if(!IsDefined(level.spawnable))
-        level.spawnable = [];
-
-    if(!IsDefined(level.SpawnableArray))
-        level.SpawnableArray = [];
-    
-    if(!IsDefined(level.SpawnableArray[type]))
-        level.SpawnableArray[type] = [];
-
-    if(isLargeSpawnable(spawn))
-    {
-        foreach(player in level.players)
-        {
-            if(Is_True(player.OnSpawnable))
-                player StopRidingSpawnable(spawn);
-        }
-    }
-
-    level.spawnable[spawn + "_" + type] = true;
-
-    if(type == "Dismantle")
-        wait 5;
-
-    if(IsDefined(level.SpawnableArray) && IsDefined(level.SpawnableArray[spawn]) && level.SpawnableArray[spawn].size)
-    {
-        for(a = 0; a < level.SpawnableArray[spawn].size; a++)
-        {
-            if(IsDefined(level.SpawnableArray[spawn][a]))
-                level.SpawnableArray[spawn][a] Delete();
-        }
-    }
-
-    if(spawn == "Skybase")
-    {
-        if(IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size)
-        {
-            for(a = 0; a < level.SkybaseTeleporters.size; a++)
-            {
-                if(!IsDefined(level.SkybaseTeleporters[a]))
-                    continue;
-
-                level.SkybaseTeleporters[a] Delete();
-            }
-
-            level.SkybaseTeleporters = undefined;
-        }
-    }
-
-    //after delete
-    level.SpawnableArray[spawn] = undefined;
-
-    if(Is_True(level.spawnable[spawn + "_" + type]))
-        level.spawnable[spawn + "_" + type] = BoolVar(level.spawnable[spawn + "_" + type]);
-
-    if(Is_True(level.spawnable[spawn + "_Spawned"]))
-        level.spawnable[spawn + "_Spawned"] = BoolVar(level.spawnable[spawn + "_Spawned"]);
-
-    if(isLargeSpawnable(spawn))
-        level.spawnable["LargeSpawnable"] = undefined;
-}
-
-function isLargeSpawnable(type)
-{
-    spawns = Array("Skybase", "Merry Go Round", "Drop Tower");
-    return isInArray(spawns, type);
-}
-
-function SpawnableArray(spawn)
-{
-    if(!IsDefined(self) || !IsDefined(spawn))
-        return;
-
-    if(!IsDefined(level.SpawnableArray))
-        level.SpawnableArray = [];
-
-    if(!IsDefined(level.SpawnableArray[spawn]))
-        level.SpawnableArray[spawn] = [];
-
-    level.SpawnableArray[spawn][level.SpawnableArray[spawn].size] = self;
-}
-
-function SeatSystem(type)
-{
-    if(!IsDefined(type) || !IsDefined(self))
-        return;
-
-    level endon(type + "_Stop");
-
-    self MakeUsable();
-    self SetCursorHint("HINT_NOICON");
-    self SetHintString("Press [{+activate}] To Ride The " + type);
-
-    while(IsDefined(self))
-    {
-        self waittill("trigger", player);
-
-        if(IsDefined(self.Rider) && player == self.Rider)
-        {
-            player StopRidingSpawnable(type, self);
-            wait 1;
-
-            continue;
-        }
-
-        if(IsDefined(self.Rider) || Is_True(player.OnSpawnable) || player isPlayerLinked(self))
-            continue;
-
-        player.SpawnableSavedOrigin = player.origin;
-        player.SpawnableSavedAngles = player.angles;
-
-        switch(type)
-        {
-            case "Merry Go Round":
-                player PlayerLinkTo(self);
-                break;
-
-            case "Drop Tower":
-                player PlayerLinkToAbsolute(self);
-                break;
-
-            default:
-                player PlayerLinkTo(self);
-                break;
-        }
-
-        player.OnSpawnable = true;
-        self.Rider = player;
-
-        self SetHintString("Press [{+activate}] To Exit The " + type);
-        wait 1;
-    }
-}
-
-function StopRidingSpawnable(type, seat)
-{
-    self Unlink();
-    self SetOrigin(self.SpawnableSavedOrigin);
-    self SetPlayerAngles(self.SpawnableSavedAngles);
-
-    if(IsDefined(seat))
-    {
-        seat.Rider = undefined;
-        seat SetHintString("Press [{+activate}] To Ride The " + type);
-    }
-
-    if(Is_True(self.OnSpawnable))
-        self.OnSpawnable = BoolVar(self.OnSpawnable);
-}
-
-function GetSpawnableBaseModel(favor)
-{
-    if(!IsDefined(level.menu_models) || !level.menu_models.size)
-        return "defaultactor";
-    
-    //This will be a fallback for maps that don't have the favored models for spawnables
-    for(a = 0; a < level.menu_models.size; a++)
-    {
-        if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "vending_") && !IsSubStr(level.menu_models[a], "upgrade") && !IsSubStr(level.menu_models[a], "packapunch"))
-            model = level.menu_models[a];
-    }
-    
-    for(a = 0; a < level.menu_models.size; a++)
-    {
-        if(!IsSubStr(level.menu_models[a], "web_") && (IsSubStr(level.menu_models[a], "vending_doubletap") || IsSubStr(level.menu_models[a], "vending_sleight") || IsSubStr(level.menu_models[a], "vending_three_gun")))
-        {
-            model = level.menu_models[a];
-
-            if(IsDefined(favor) && IsDefined(model) && (model == favor || IsSubStr(model, favor)))
-                return model;
-        }
-    }
-
-    if(!IsDefined(model)) //If a model still isn't found after this, then spawnbales won't be available for the map
-    {
-        for(a = 0; a < level.menu_models.size; a++)
-        {
-            if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "machine"))
-                model = level.menu_models[a];
-        }
-    }
-
-    return model;
-}
-
-function GetSpawnablePerkBottle()
-{
-    for(a = 0; a < level.menu_models.size; a++)
-    {
-        if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "perk_bottle") && !IsSubStr(level.menu_models[a], "broken"))
-            return level.menu_models[a];
-    }
-
-    //If there is no perk bottle found on the map, then we will just use the insta-kill model..if that isn't found, it will fallback to defaultactor
-    return (((IsDefined(level.zombie_powerups) && IsDefined(level.zombie_powerups["insta_kill"])) ? level.zombie_powerups["insta_kill"].model_name : "defaultactor"));
-}
-
-
-
-
-
-
-
-
-//Rain Options
-function DisableLobbyRain(includePowerups = true)
-{
-    level notify("EndLobbyRain");
-
-    if(Is_True(includePowerups))
-        level.RainPowerups = undefined;
-    
-    level.LobbyRain = undefined;
-    level.LobbyRainType = undefined;
-}
-
-function LobbyRain(type, rain)
-{
-    if(IsDefined(level.LobbyRain) && IsDefined(level.LobbyRainType) && level.LobbyRainType == type && level.LobbyRain == rain)
-        return DisableLobbyRain(false);
-
-    level notify("EndLobbyRain");
-    level endon("EndLobbyRain");
-
-    level.LobbyRain = rain;
-    level.LobbyRainType = type;
-    
-    while(1)
-    {
-        player = bot::get_host_player();
-
-        if(!IsDefined(player) || !Is_Alive(player))
-        {
-            foreach(client in level.players)
-            {
-                if(!IsDefined(client) || !Is_Alive(client))
-                    continue;
-                
-                player = client;
-                break;
-            }
-        }
-
-        origin = (player.origin + (RandomIntRange(-2500, 2500), RandomIntRange(-2500, 2500), RandomIntRange(750, 3000)));
-
-        switch(type)
-        {
-            case "Projectile":
-                MagicBullet(rain, origin, (origin + (0, 0, -1000)));
-                break;
-            
-            case "Model":
-                RainModel = SpawnScriptModel(origin, rain);
-
-                if(!IsDefined(RainModel))
-                    break;
-                
-                RainModel NotSolid();
-                RainModel Launch(VectorScale(AnglesToForward(RainModel.angles), 10));
-                RainModel thread deleteAfter(10);
-                break;
-            
-            case "FX":
-                linker = SpawnScriptModel(origin, "tag_origin");
-
-                if(!IsDefined(linker))
-                    break;
-                
-                linker thread RainPlayFXOnTag(level._effect[rain], "tag_origin");
-                linker Launch(VectorScale(AnglesToForward(linker.angles), 10));
-                linker thread deleteAfter(10);
-                break;
-            
-            default:
-                break;
-        }
-        
-        wait ((type == "Model") ? 0.1 : 0.05);
-    }
-}
-
-function RainPlayFXOnTag(FX, tag)
-{
-    while(IsDefined(self))
-    {
-        PlayFXOnTag(FX, self, tag);
-        wait 0.5;
-    }
-}
-
-function RainPowerups()
-{
-    level.RainPowerups = BoolVar(level.RainPowerups);
-
-    while(Is_True(level.RainPowerups))
-    {
-        player = bot::get_host_player();
-
-        if(!IsDefined(player) || !Is_Alive(player))
-        {
-            foreach(client in level.players)
-            {
-                if(!IsDefined(client) || !Is_Alive(client))
-                    continue;
-                
-                player = client;
-                break;
-            }
-        }
-
-        powerup = level CustomPowerupSpawn(GetArrayKeys(level.zombie_include_powerups)[RandomInt(level.zombie_include_powerups.size)], player.origin + (RandomIntRange(-1000, 1000), RandomIntRange(-1000, 1000), RandomIntRange(750, 2000)));
-        
-        if(IsDefined(powerup))
-            powerup PhysicsLaunch(powerup.origin, (RandomIntRange(-5, 5), RandomIntRange(-5, 5), RandomIntRange(-5, 5)));
-
-        wait 0.05;
-    }
-}
-
-function CustomPowerupSpawn(powerup_name, drop_spot)
-{
-    powerup = zm_net::network_safe_spawn("powerup", 1, "script_model", drop_spot);
-
-    if(IsDefined(powerup))
-    {
-        powerup zm_powerups::powerup_setup(powerup_name);
-
-        if(!IsDefined(powerup))
-            return;
-
-        if(isInArray(level.active_powerups, powerup))
-            level.active_powerups = ArrayRemove(level.active_powerups, powerup);
-
-        powerup thread custom_powerup_timeout();
-        powerup thread zm_powerups::powerup_grab();
-        powerup thread zm_powerups::powerup_wobble_fx();
-
-        return powerup;
-    }
-}
-
-function custom_powerup_timeout()
-{
-    wait 15;
-
-    if(!IsDefined(self))
-        return;
-    
-    self notify("powerup_timedout");
-    self zm_powerups::powerup_delete();
-}
-
-
-
-
-
-
-
-
-//Small Spawnables
-function Tornado()
-{
-    if(!Is_True(level.TornadoSpawned))
-    {
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
-        
-        origin = trace["position"];
-        surface = trace["surfacetype"];
-
-        if(IsDefined(surface) && (surface == "none" || surface == "default"))
-            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-    }
-    else
-    {
-        if(!IsDefined(level.SpawnableArray["Tornado"]) || !level.SpawnableArray["Tornado"].size)
-            return;
-        
-        for(a = 0; a < level.SpawnableArray["Tornado"].size; a++)
-        {
-            if(IsDefined(level.SpawnableArray["Tornado"][a]))
-                level.SpawnableArray["Tornado"][a] Delete();
-        }
-        
-        level notify("Tornado_Stop");
-        level.TornadoSpawned = BoolVar(level.TornadoSpawned);
-        return;
-    }
-
-    level endon("Tornado_Stop");
-    level.TornadoSpawned = true;
-    
-    TornadoParts = [];
-    level.tornadoTime = 0;
-    
-    TornadoParts[0] = SpawnScriptModel(origin, "tag_origin");
-    TornadoParts[0] SpawnableArray("Tornado");
-    color = Int(Pow(2, RandomInt(3)));
-
-    for(a = 1; a < 15; a++)
-    {
-        for(b = 0; b < (a + 2); b++)
-        {
-            TornadoParts[TornadoParts.size] = SpawnScriptModel(TornadoParts[0].origin + (Cos((b * 360) / (a + 2)) * (a * 6), Sin((b * 360) / (a + 2)) * (a * 6), (a * 18)), "tag_origin");
-            
-            TornadoParts[(TornadoParts.size - 1)] LinkTo(TornadoParts[0]);
-            TornadoParts[(TornadoParts.size - 1)] SpawnableArray("Tornado");
-            TornadoParts[(TornadoParts.size - 1)] clientfield::set("powerup_fx", color);
-            wait 0.01;
-        }
-    }
-
-    TornadoParts[0] thread TornadoMovement(TornadoParts[0].origin);
-    level thread TornadoWatchEntities(TornadoParts);
-}
-
-function TornadoMovement(defaultOrigin)
-{
-    level endon("Tornado_Stop");
-    self endon("EndTornadoMovement");
-    
-    while(IsDefined(self))
-    {
-        self zm_utility::create_zombie_point_of_interest(5000, 255, 10000, 1);
-        self MoveTo(self.origin + (RandomIntRange(-100, 100), RandomIntRange(-100, 100), 0), 3);
-        self RotateYaw(360, 3);
-        wait 3;
-    
-        if(!IsDefined(self))
-            break;
-
-        if(Distance(defaultOrigin, self.origin) >= 750)
-        {
-            self MoveTo(defaultOrigin, 3);
-            self RotateYaw(360, 3);
-
-            wait 3;
-        }
-    }
-}
-
-function TornadoWatchEntities(TornadoParts)
-{
-    level endon("Tornado_Stop");
-
-    wait 3;
-
-    while(1)
-    {
-        if(!IsDefined(TornadoParts) || !TornadoParts.size)
-            break;
-        
-        foreach(entity in GetEntArray("script_model", "classname"))
-        {
-            if(!IsDefined(entity) || isInArray(TornadoParts, entity) || Is_True(entity.OnTornado) || entity.model == "tag_origin")
-                continue;
-            
-            for(a = 1; a < TornadoParts.size; a++)
-            {
-                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, entity.origin) <= 100)
-                {
-                    entity thread TornadoLaunchEntity(a, TornadoParts);
-                    break;
-                }
-            }
-        }
-
-        foreach(player in level.players)
-        {
-            if(!IsDefined(player) || !Is_Alive(player) || player isPlayerLinked() || Is_True(player.OnTornado))
-                continue;
-            
-            for(a = 1; a < TornadoParts.size; a++)
-            {
-                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, player.origin) <= 100)
-                {
-                    player thread TornadoLaunchPlayer(a, TornadoParts);
-                    break;
-                }
-            }
-        }
-        
-        foreach(zombie in GetAITeamArray(level.zombie_team))
-        {
-            if(!IsDefined(zombie) || !IsAlive(zombie) || Is_True(zombie.OnTornado))
-                continue;
-            
-            for(a = 1; a < TornadoParts.size; a++)
-            {
-                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, zombie.origin) <= 100)
-                {
-                    zombie thread TornadoLaunchZombie(a, TornadoParts);
-                    break;
-                }
-            }
-        }
-
-        wait 0.01;
-    }
-}
-
-function TornadoLaunchPlayer(a, TornadoParts)
-{
-    if(!IsDefined(self) || !Is_Alive(self))
-        return;
-    
-    level endon("Tornado_Stop");
-    self endon("disconnect");
-
-    self.OnTornado = true;
-
-    for(b = a; b < TornadoParts.size; b++)
-    {
-        if(!IsDefined(self) || !Is_Alive(self))
-            break;
-        
-        if(IsDefined(TornadoParts[b]) && b % 2)
-        {
-            self PlayerLinkTo(TornadoParts[b], "tag_origin");
-            wait 0.025;
-        }
-    }
-
-    if(!IsDefined(self) || !Is_Alive(self))
-        return;
-
-    self Unlink();
-
-    if(self IsOnGround())
-        self SetOrigin(self.origin + (0, 0, 5));
-
-    self SetVelocity(AnglesToForward(self GetPlayerAngles()) * 3500);
-    wait 1;
-
-    if(!IsDefined(self) || !Is_Alive(self))
-        return;
-
-    if(Is_True(self.OnTornado))
-        self.OnTornado = BoolVar(self.OnTornado);
-}
-
-function TornadoLaunchZombie(a, TornadoParts)
-{
-    if(!IsDefined(self) || !IsAlive(self))
-        return;
-    
-    level endon("Tornado_Stop");
-
-    self.OnTornado = true;
-
-    for(b = a; b < TornadoParts.size; b++)
-    {
-        if(!IsDefined(self) || !IsAlive(self))
-            break;
-        
-        if(IsDefined(TornadoParts[b]) && b % 2)
-        {
-            self ForceTeleport(TornadoParts[b].origin);
-            self LinkTo(TornadoParts[b]);
-
-            wait 0.025;
-        }
-    }
-    
-    if(!IsDefined(self) || !IsAlive(self))
-        return;
-
-    linker = SpawnScriptModel(self.origin, "tag_origin");
-    self LinkTo(linker, "tag_origin");
-    linker Launch(AnglesToForward(self.angles) * 3500);
-    wait 1;
-
-    if(!IsDefined(self) || !IsAlive(self))
-        return;
-
-    if(IsDefined(linker))
-        linker Delete();
-    
-    if(Is_True(self.OnTornado))
-        self.OnTornado = BoolVar(self.OnTornado);
-}
-
-function TornadoLaunchEntity(a, TornadoParts)
-{
-    if(!IsDefined(self))
-        return;
-    
-    self.OnTornado = true;
-
-    for(b = a; b < TornadoParts.size; b++)
-    {
-        if(!IsDefined(self))
-            break;
-        
-        if(b % 2 && IsDefined(TornadoParts[b]))
-        {
-            self.origin = TornadoParts[b].origin;
-            self LinkTo(TornadoParts[b]);
-
-            wait 0.025;
-        }
-    }
-
-    if(!IsDefined(self))
-        return;
-
-    self Unlink();
-    self Launch(AnglesToForward(self.angles) * 5500);
-    wait 1;
-
-    if(!IsDefined(self))
-        return;
-
-    if(Is_True(self.OnTornado))
-        self.OnTornado = BoolVar(self.OnTornado);
-}
-
-function MexicanWave(size)
-{
-    if(IsDefined(self.MexicanWave) && self.MexicanWave.size)
-    {
-        for(a = 0; a < self.MexicanWave.size; a++)
-        {
-            if(IsDefined(self.MexicanWave[a]))
-                self.MexicanWave[a] Delete();
-        }
-        
-        self.MexicanWave = undefined;
-        return;
-    }
-    
-    self.MexicanWave = [];
-    angles = (0, self GetPlayerAngles()[1], 0);
-
-    for(a = 0; a < size; a++)
-    {
-        self.MexicanWave[self.MexicanWave.size] = SpawnScriptModel(self.origin + AnglesToRight(self GetPlayerAngles()) * (a * 45), "defaultactor", angles);
-        self.MexicanWave[(self.MexicanWave.size - 1)] thread MexicanWaveMove(a);
-    }
-}
-
-function MexicanWaveMove(index)
-{
-    wait (index * 0.2);
-
-    while(IsDefined(self))
-    {
-        self MoveZ(55, 0.75);
-        wait 0.74;
-
-        if(IsDefined(self))
-            self MoveZ(-55, 0.75);
-        
-        wait 0.74;
-    }
-}
-
-function SpiralStaircase(size)
-{
-    if(Is_True(level.SpiralStaircaseSpawning))
-        return self iPrintlnBold("^1ERROR: ^7Spiral Staircase Is Being Built");
-    
-    if(Is_True(level.SpiralStaircaseDeleting))
-        return self iPrintlnBold("^1ERROR: ^7Spiral Staircase Is Being Deleted");
-    
-    if(IsDefined(level.SpiralStaircase) && level.SpiralStaircase.size)
-    {
-        level.SpiralStaircaseDeleting = true;
-
-        for(a = 0; a < level.SpiralStaircase.size; a++)
-        {
-            if(IsDefined(level.SpiralStaircase[a]))
-            {
-                level.SpiralStaircase[a] Launch(VectorScale(AnglesToForward(level.SpiralStaircase[a].angles), 255));
-                level.SpiralStaircase[a] NotSolid();
-                level.SpiralStaircase[a] thread deleteAfter(5);
-
-                wait 0.01;
-            }
-        }
-        
-        wait 5;
-        level.SpiralStaircase = [];
-
-        if(Is_True(level.SpiralStaircaseDeleting))
-            level.SpiralStaircaseDeleting = BoolVar(level.SpiralStaircaseDeleting);
-    }
-    else
-    {
-        model = GetSpawnableBaseModel();
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        trace = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
-
-        if(!isInArray(level.menu_models, model))
-            return self iPrintlnBold("^1ERROR: ^7Couldn't Find A Valid Base Model For The Spiral Staircase");
-    
-        origin = trace["position"];
-        surface = trace["surfacetype"];
-
-        if(IsDefined(surface) && (surface == "none" || surface == "default"))
-            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-        
-        level.SpiralStaircaseSpawning = true;
-
-        if(!IsDefined(level.SpiralStaircase))
-            level.SpiralStaircase = [];
-        
-        level.SpiralStaircase[0] = SpawnScriptModel(origin, model, (-28, self GetPlayerAngles()[1], 90));
-        
-        for(a = 1; a < size; a++)
-        {
-            if(!IsDefined(level.SpiralStaircase[(level.SpiralStaircase.size - 1)]))
-                continue;
-            
-            level.SpiralStaircase[level.SpiralStaircase.size] = SpawnScriptModel((level.SpiralStaircase[(level.SpiralStaircase.size - 1)].origin + (AnglesToForward(level.SpiralStaircase[(level.SpiralStaircase.size - 1)].angles) * 10) + (0, 0, 8)), model, (level.SpiralStaircase[0].angles[0], (level.SpiralStaircase[(level.SpiralStaircase.size - 1)].angles[1] + 12), level.SpiralStaircase[0].angles[2]), 0.01);
-        }
-
-        if(Is_True(level.SpiralStaircaseSpawning))
-            level.SpiralStaircaseSpawning = BoolVar(level.SpiralStaircaseSpawning);
-    }
-}
-
-function SpawnTeleporter(action = "Spawn", origin, skipLink = false, skipDelete = false)
-{
-    if(IsDefined(action) && action == "Delete All")
-    {
-        DeleteTeleporters();
-        return;
-    }
-
-    if(!IsDefined(origin))
-    {
-        start = self GetWeaponMuzzlePoint();
-
-        if(!IsDefined(start) || !IsVec(start))
-            start = self GetEye();
-        
-        traceSurface = BulletTrace(start, start + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
-
-        if(traceSurface == "none" || traceSurface == "default")
-            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
-        
-        origin = self TraceBullet() + (0, 0, 45);
-    }
-
-    linker = SpawnScriptModel(origin, "tag_origin");
-    linker thread AddActiveTeleporter(skipLink, skipDelete);
-
-    return linker;
-}
-
-function DeleteTeleporters()
-{
-    if(!IsDefined(level.ActiveTeleporters) || !level.ActiveTeleporters.size)
-        return;
-    
-    foreach(teleporter in level.ActiveTeleporters)
-    {
-        if(IsDefined(teleporter) && !Is_True(teleporter.skipDelete))
-            teleporter Delete();
-    }
-}
-
-function AddActiveTeleporter(skipLink = false, skipDelete = false)
-{
-    if(!IsDefined(level.ActiveTeleporters))
-        level.ActiveTeleporters = [];
-    
-    if(isInArray(level.ActiveTeleporters, self))
-        return;
-    
-    if(level.ActiveTeleporters.size && !skipLink)
-    {
-        if(IsDefined(level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)]) && !IsDefined(level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)].LinkedTeleporter))
-        {
-            self.LinkedTeleporter = level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)];
-            level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)].LinkedTeleporter = self;
-        }
-    }
-
-    self.skipDelete = skipDelete;
-    level.ActiveTeleporters[level.ActiveTeleporters.size] = self;
-
-    self MakeUsable();
-    self SetCursorHint("HINT_NOICON");
-    self SetHintString("Press [{+activate}] To Teleport");
-    self thread ActivateTeleporter();
-
-    while(IsDefined(self))
-    {
-        PlayFXOnTag(level._effect["teleport_aoe_kill"], self, "tag_origin");
-        wait 0.25;
-    }
-}
-
-function ActivateTeleporter()
-{
-    if(IsDefined(self.TeleporterActivated))
-        return;
-    self.TeleporterActivated = true;
-
-    while(IsDefined(self))
-    {
-        self waittill("trigger", player);
-        
-        if(Is_True(player.UsingTeleporter) || !IsDefined(self))
-            continue;
-        
-        if(!IsDefined(self.LinkedTeleporter))
-        {
-            player iPrintlnBold("^1ERROR: ^7No Linked Teleporter Found");
-            continue;
-        }
-        
-        player thread UseTeleporter(self);
-    }
-}
-
-function UseTeleporter(teleporter)
-{
-    if(!IsDefined(teleporter) || Is_True(self.UsingTeleporter) || !IsDefined(teleporter.LinkedTeleporter))
-        return;
-    
-    self.UsingTeleporter = true;
-    PlayFX(level._effect["teleport_splash"], teleporter.origin);
-    wait 0.05;
-
-    self SetOrigin(teleporter.LinkedTeleporter.origin);
-    PlayFX(level._effect["teleport_splash"], teleporter.LinkedTeleporter.origin);
-    wait 1.5;
-
-    if(Is_True(self.UsingTeleporter))
-        self.UsingTeleporter = BoolVar(self.UsingTeleporter);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//AllTheWeapons.gsc
 //All The Weapons game mode developed by CF4_99
 function initAllTheWeapons(type)
 {
@@ -21986,11 +8540,11 @@ function initAllTheWeapons(type)
     level thread ATWGameOverHandle();
 
     weaponArray = [];
-    usedWeaponArray = ((!IsVerkoMap() ? (((type == "Base Weapons") ? GetArrayKeys(level.zombie_weapons) : (((type == "Upgraded Weapons") ? GetArrayKeys(level.zombie_weapons_upgraded) : ArrayCombine(GetArrayKeys(level.zombie_weapons), GetArrayKeys(level.zombie_weapons_upgraded), 0, 1))))) : (((type == "Base Weapons") ? level.var_21b77150 : (((type == "Upgraded Weapons") ? level.var_2b893b73 : ArrayCombine(level.var_21b77150, level.var_2b893b73, 0, 1)))))));
+    usedWeaponArray = (!IsVerkoMap() ? ((type == "Base Weapons") ? GetArrayKeys(level.zombie_weapons) : ((type == "Upgraded Weapons") ? GetArrayKeys(level.zombie_weapons_upgraded) : ArrayCombine(GetArrayKeys(level.zombie_weapons), GetArrayKeys(level.zombie_weapons_upgraded), 0, 1))) : ((type == "Base Weapons") ? level.var_21b77150 : ((type == "Upgraded Weapons") ? level.var_2b893b73 : ArrayCombine(level.var_21b77150, level.var_2b893b73, 0, 1))));
 
     foreach(weapon in usedWeaponArray)
     {
-        wpn = ((!IsVerkoMap() ? weapon : GetWeapon(weapon)));
+        wpn = (!IsVerkoMap() ? weapon : GetWeapon(weapon));
 
         if(wpn.isgrenadeweapon || wpn.ismeleeweapon || type == "Base Weapons" && IsSubStr(wpn.name, "upgraded") || wpn.name == "none")
             continue;
@@ -22111,67 +8665,10 @@ function ATWGameOverHandle()
     }
 }
 
+// ============================================================
+// Functions/GameModes/ModeCommonScripts.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//ModeCommonScripts.gsc
 function ModeWeaponMonitor(weaponArray)
 {
     if(Is_True(self.ModeWeaponMonitor))
@@ -22185,7 +8682,7 @@ function ModeWeaponMonitor(weaponArray)
         self waittill("weapon_change", newWeapon);
         wait 0.1; //this buffer should help avoid the death machine powerup icon from sticking
 
-        keepWeapon = ((Is_True(level.initSharpshooter) ? weaponArray[level.indexSharpshooter] : level.currentWeaponAllTheWeapons));
+        keepWeapon = (Is_True(level.initSharpshooter) ? weaponArray[level.indexSharpshooter] : level.currentWeaponAllTheWeapons);
 
         if(newWeapon != keepWeapon)
         {
@@ -22202,53 +8699,110 @@ function ModeWeaponMonitor(weaponArray)
     }
 }
 
+// ============================================================
+// Functions/GameModes/ModMenuLobby.gsc
+// ============================================================
 
+function InitModMenuLobby(access)
+{
+    if(Is_True(level.GameModeSelected))
+        return;
+    level.GameModeSelected = true;
 
+    if(!Is_True(level.AutoRevive))
+        level thread AutoRevive();
+    
+    if(!Is_True(level.AutoRespawn))
+        level thread AutoRespawn();
 
+    MenuPerks = [];
+    perks = GetArrayKeys(level._custom_perks);
 
+    for(a = 0; a < perks.size; a++)
+        array::add(MenuPerks, perks[a], 0);
 
+    foreach(player in level.players)
+    {
+        player.playerGodmode = true;
 
+        if(Is_True(player.PlayerDemiGod))
+            player.PlayerDemiGod = undefined;
+        
+        thread UnlimitedAmmo("Continuous", player);
 
+        if(!IsDefined(player.perks_active) || player.perks_active.size != MenuPerks.size)
+            thread PlayerAllPerks(player);
+        
+        if(!Is_True(player._retain_perks))
+            thread PlayerRetainPerks(player);
+        
+        if(!Is_True(player.ReducedSpread))
+            ReducedSpread(player);
+        
+        ModifyScore(4194303, player);
+        CustomCrosshairs("+", player);
 
+        player SetPerk("specialty_unlimitedsprint");
+        player SetPerk("specialty_sprintfire");
 
+        if(player isInMenu(true))
+            player thread closeMenu1();
+        
+        player.currentMenu = undefined;
+        player.menuCursor = undefined;
+        player.menu_parent = undefined;
+        player.menu_parentQM = undefined;
+    }
 
+    SetVerificationAllPlayers(access);
+    level thread ModMenuLobbyMessage();
 
+    wait 1;
+    level.SuperJump = true;
+    SetJumpHeight(1023);
+    SetDvar("bg_gravity", 200);
+    SetDvar("g_speed", "500");
 
+    if(!Is_True(level.Newsbar))
+        level thread Newsbar();
+    
+    if(!Is_True(level.Doheart))
+    {
+        level.DoheartStyle = "Moving";
+        level.DoheartSavedText = "discord.gg/apparitionbo3";
+        level thread Doheart();
+    }
 
+    thread OpenAllDoors();
 
+    foreach(player in level.players)
+    {
+        if(!Is_Alive(player))
+            continue;
+        
+        player SetOrigin(player.origin + (0, 0, 5));
+        player SetVelocity(player GetVelocity() + (0, 0, RandomIntRange(750, 1000)));
+    }
+}
 
+function ModMenuLobbyMessage()
+{
+    messages = Array("Welcome To " + GetMenuName() + " Developed By CF4_99", "Lobby Hosted By: " + CleanName(bot::get_host_player() getName()));
+    ModMenuLobbyMessage = [];
 
+    for(a = 0; a < messages.size; a++)
+    {
+        ModMenuLobbyMessage[a] = createServerText("objective", 2.1, 1, "", "CENTER", 320, 140 + (a * 23), 1, level.RGBFadeColor);
+        ModMenuLobbyMessage[a] thread SetTextFX(messages[a], 10);
+        ModMenuLobbyMessage[a] thread HudRGBFade();
+        wait 1;
+    }
+}
 
+// ============================================================
+// Functions/GameModes/Sharpshooter.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Sharpshooter.gsc
 //Sharpshooter game mode developed by CF4_99
 function initSharpshooter(type)
 {
@@ -22264,11 +8818,11 @@ function initSharpshooter(type)
     level thread SSGameOverHandle();
 
     weaponArray = [];
-    usedWeaponArray = ((!IsVerkoMap() ? (((type == "Base Weapons") ? GetArrayKeys(level.zombie_weapons) : (((type == "Upgraded Weapons") ? GetArrayKeys(level.zombie_weapons_upgraded) : ArrayCombine(GetArrayKeys(level.zombie_weapons), GetArrayKeys(level.zombie_weapons_upgraded), 0, 1))))) : (((type == "Base Weapons") ? level.var_21b77150 : (((type == "Upgraded Weapons") ? level.var_2b893b73 : ArrayCombine(level.var_21b77150, level.var_2b893b73, 0, 1)))))));
+    usedWeaponArray = (!IsVerkoMap() ? ((type == "Base Weapons") ? GetArrayKeys(level.zombie_weapons) : ((type == "Upgraded Weapons") ? GetArrayKeys(level.zombie_weapons_upgraded) : ArrayCombine(GetArrayKeys(level.zombie_weapons), GetArrayKeys(level.zombie_weapons_upgraded), 0, 1))) : ((type == "Base Weapons") ? level.var_21b77150 : ((type == "Upgraded Weapons") ? level.var_2b893b73 : ArrayCombine(level.var_21b77150, level.var_2b893b73, 0, 1))));
 
     foreach(weapon in usedWeaponArray)
     {
-        wpn = ((!IsVerkoMap() ? weapon : GetWeapon(weapon)));
+        wpn = (!IsVerkoMap() ? weapon : GetWeapon(weapon));
 
         if(wpn.isgrenadeweapon || wpn.ismeleeweapon || type == "Base Weapons" && IsSubStr(wpn.name, "upgraded") || wpn.name == "none")
             continue;
@@ -22380,216 +8934,10 @@ function SSGameOverHandle()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Ascension.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//ModMenuLobby.gsc
-function InitModMenuLobby(access)
-{
-    if(Is_True(level.GameModeSelected))
-        return;
-    level.GameModeSelected = true;
-
-    if(!Is_True(level.AutoRevive))
-        level thread AutoRevive();
-    
-    if(!Is_True(level.AutoRespawn))
-        level thread AutoRespawn();
-
-    MenuPerks = [];
-    perks = GetArrayKeys(level._custom_perks);
-
-    for(a = 0; a < perks.size; a++)
-        array::add(MenuPerks, perks[a], 0);
-
-    foreach(player in level.players)
-    {
-        player.playerGodmode = true;
-
-        if(Is_True(player.PlayerDemiGod))
-            player.PlayerDemiGod = undefined;
-        
-        thread UnlimitedAmmo("Continuous", player);
-
-        if(!IsDefined(player.perks_active) || player.perks_active.size != MenuPerks.size)
-            thread PlayerAllPerks(player);
-        
-        if(!Is_True(player._retain_perks))
-            thread PlayerRetainPerks(player);
-        
-        if(!Is_True(player.ReducedSpread))
-            ReducedSpread(player);
-        
-        ModifyScore(4194303, player);
-        CustomCrosshairs("+", player);
-
-        player SetPerk("specialty_unlimitedsprint");
-        player SetPerk("specialty_sprintfire");
-
-        if(player isInMenu(true))
-            player thread closeMenu1();
-        
-        player.currentMenu = undefined;
-        player.menuCursor = undefined;
-        player.menu_parent = undefined;
-        player.menu_parentQM = undefined;
-    }
-
-    SetVerificationAllPlayers(access);
-    level thread ModMenuLobbyMessage();
-
-    wait 1;
-    level.SuperJump = true;
-    SetJumpHeight(1023);
-    SetDvar("bg_gravity", 200);
-    SetDvar("g_speed", "500");
-
-    if(!Is_True(level.Newsbar))
-        level thread Newsbar();
-    
-    if(!Is_True(level.Doheart))
-    {
-        level.DoheartStyle = "Moving";
-        level.DoheartSavedText = "discord.gg/apparitionbo3";
-        level thread Doheart();
-    }
-
-    foreach(player in level.players)
-    {
-        if(!Is_Alive(player))
-            continue;
-        
-        player SetOrigin(player.origin + (0, 0, 5));
-        player SetVelocity(player GetVelocity() + (0, 0, RandomIntRange(750, 1000)));
-    }
-}
-
-function ModMenuLobbyMessage()
-{
-    messages = Array("Welcome To " + GetMenuName() + " Developed By CF4_99", "Lobby Hosted By: " + CleanName(bot::get_host_player() getName()));
-    ModMenuLobbyMessage = [];
-
-    for(a = 0; a < messages.size; a++)
-    {
-        ModMenuLobbyMessage[a] = createServerText("objective", 2.1, 1, "", "CENTER", "CENTER", 0, -100 + (a * 23), 1, level.RGBFadeColor);
-        ModMenuLobbyMessage[a] thread SetTextFX(messages[a], 10);
-        ModMenuLobbyMessage[a] thread HudRGBFade();
-        wait 1;
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Ascension.gsc
 function PopulateAscensionScripts(menu)
 {
     switch(menu)
@@ -23042,6 +9390,9 @@ function ActivateSwitches()
         swtch.pressed = true;
     }
 
+    /*level flag::set("switches_synced"); //If you don't want to wait for a monkey round
+    level notify("switches_synced");*/
+
     while(!level flag::get("switches_synced"))
         wait 0.1;
 
@@ -23331,50 +9682,10 @@ function reward_wait()
     self zm_utility::give_player_all_perks();
 }
 
+// ============================================================
+// Functions/MapScripts/BusDepot.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//BusDepot.gsc
 function PopulateBusDepotScripts(menu)
 {
     switch(menu)
@@ -23386,40 +9697,10 @@ function PopulateBusDepotScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/CommonMapScripts.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//CommonMapScripts.gsc
 function PopulateMapChallenges(menu)
 {
     switch(menu)
@@ -23649,59 +9930,10 @@ function SpawnSacrificedZombie(goalEnt)
     return zombie;
 }
 
+// ============================================================
+// Functions/MapScripts/DerEisendrache.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//DerEisendrache.gsc
 function PopulateDerEisendracheScripts(menu)
 {
     switch(menu)
@@ -25054,6 +11286,10 @@ function CollectWolfSouls()
 
     while(!level flag::get("wolf_howl_escort"))
     {
+        /*
+            This notify will end the script checking if the player loses the wolf.
+            Usually, if the player loses the wolf(wolf isn't in sight of the player for too long) it will end the quest step, and it will have to be started again by the player
+        */
         level.var_52978d72 notify("player_found_skadi");
 
         if(!IsDefined(level.var_e6d07014) && !level flag::get("wolf_howl_escort")) //This is a fail safe, in the case the quest step gets killed. It will allow the script to be ran again when the step is restarted
@@ -25158,63 +11394,10 @@ function WolfWallRunning()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/DerRieseDeclassified.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//DerRieseDeclassified.gsc
 function PopulateDerRieseScripts(menu)
 {
     switch(menu)
@@ -25226,47 +11409,10 @@ function PopulateDerRieseScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/DieRise.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//DieRise.gsc
 function PopulateDieRiseScripts(menu)
 {
     switch(menu)
@@ -25318,7 +11464,7 @@ function CollectElevatorKey(player)
 
 function SetPlayerBank(amount, player)
 {
-    cash = (((amount == "Max") ? 250 : 0));
+    cash = ((amount == "Max") ? 250 : 0);
     player SetClientDieRiseStat("bank_account_value", cash);
     player.account_value = cash;
 }
@@ -25394,8 +11540,8 @@ function SetDieRiseRankPlayer(playerName)
 function SetDieRisePlayerRank(rank, player)
 {
     time_played = player GetClientDieRiseStat("total_time_played");
-    rounds = player GetClientDieRiseStat("weighted_rounds");
-    downs = player GetClientDieRiseStat("weighted_downs");
+	rounds = player GetClientDieRiseStat("weighted_rounds");
+	downs = player GetClientDieRiseStat("weighted_downs");
 
     if(rank > 1)
     {
@@ -25456,66 +11602,10 @@ function SetDieRisePlayerRank(rank, player)
     level notify("force_player_rank_update");
 }
 
+// ============================================================
+// Functions/MapScripts/Diner.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Diner.gsc
 function PopulateDinerScripts(menu)
 {
     switch(menu)
@@ -25527,50 +11617,10 @@ function PopulateDinerScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Farm.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Farm.gsc
 function PopulateFarmScripts(menu)
 {
     switch(menu)
@@ -25582,55 +11632,10 @@ function PopulateFarmScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/GorodKrovi.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//GorodKrovi.gsc
 function PopulateGorodKroviScripts(menu)
 {
     switch(menu)
@@ -25647,53 +11652,10 @@ function TriggerSophia()
 {
 }
 
+// ============================================================
+// Functions/MapScripts/KinoDerToten.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//KinoDerToten.gsc
 function PopulateKinoScripts(menu)
 {
     switch(menu)
@@ -25755,49 +11717,10 @@ function CompleteMeteorEE()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Leviathan.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Leviathan.gsc
 function PopulateLeviathanScripts(menu)
 {
     switch(menu)
@@ -25809,59 +11732,10 @@ function PopulateLeviathanScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/MobOfTheDead.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//MobOfTheDead.gsc
 function PopulateMOTDScripts(menu)
 {
     switch(menu)
@@ -25987,7 +11861,7 @@ function ModifyPlayerAfterLives(amount, player)
     if(amount > 0)
         player PlaySoundToPlayer("zmb_afterlife_add", player);
     
-    player clientfield::set_player_uimodel("player_lives", player.lives);
+	player clientfield::set_player_uimodel("player_lives", player.lives);
     self RefreshMenu(menu, curs);
 }
 
@@ -26045,69 +11919,10 @@ function GetMOTDGeneratorName(index)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Moon.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Moon.gsc
 function PopulateMoonScripts(menu)
 {
     switch(menu)
@@ -26149,16 +11964,13 @@ function send_clientnotify(digger_name, pause)
 {
     switch(digger_name)
     {
-        case "hangar":
-            util::clientnotify((!pause ? "Dz3" : "Dz3e"));
+        case "hangar": util::clientnotify((!pause ? "Dz3" : "Dz3e"));
             break;
 
-        case "teleporter":
-            util::clientnotify((!pause ? "Dz2" : "Dz2e"));
+        case "teleporter": util::clientnotify((!pause ? "Dz2" : "Dz2e"));
             break;
 
-        case "biodome":
-            util::clientnotify((!pause ? "Dz5" : "Dz5e"));
+        case "biodome": util::clientnotify((!pause ? "Dz5" : "Dz5e"));
             break;
 
         default:
@@ -26325,11 +12137,11 @@ function FastExcavators()
         {
             level flag::wait_till("digger_moving");
 
-            while(level flag::get("digger_moving")) //This needs to be looped. The speed is recalculated the whole time the excavators are moving.
+            while(level flag::get("digger_moving"))
             {
                 foreach(digger in GetEntArray("digger_body", "targetname"))
                 {
-                    tracks = (((digger.script_string == "teleporter_digger_stopped") ? GetEntArray(digger.target, "targetname")[0] : GetEntArray(digger.target, "targetname")[1]));
+                    tracks = ((digger.script_string == "teleporter_digger_stopped") ? GetEntArray(digger.target, "targetname")[0] : GetEntArray(digger.target, "targetname")[1]);
                     tracks.digger_speed = 2000; //Set This To Whatever. Default is around 30 - 50. You don't need to reset it since it gets recalculated everytime they move.
                 }
 
@@ -26343,67 +12155,10 @@ function FastExcavators()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Nacht.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Nacht.gsc
 function PopulateNachtScripts(menu)
 {
     switch(menu)
@@ -26428,59 +12183,10 @@ function NachtUndoneSong()
         barrel DoDamage(barrel.health + 666, barrel.origin, self);
 }
 
+// ============================================================
+// Functions/MapScripts/Origins.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Origins.gsc
 function PopulateOriginsScripts(menu)
 {
     switch(menu)
@@ -26741,7 +12447,7 @@ function SetGeneratorState(generator)
 
     update_captured_zone_count();
 
-    struct.n_current_progress = ((struct flag::get("player_controlled") ? 100 : 0));
+    struct.n_current_progress = (struct flag::get("player_controlled") ? 100 : 0);
     struct.n_last_progress = struct.n_current_progress;
 
     level clientfield::set("state_" + struct.script_noteworthy, (struct flag::get("player_controlled") ? 2 : 4));
@@ -27567,7 +13273,7 @@ function CompleteLightningSong()
     order = Array(11, 7, 3, 7, 4, 2, 9, 5, 3); //The order is always the same
 
     level notify("piano_keys_stop");
-    level.a_piano_keys_playing = [];
+	level.a_piano_keys_playing = [];
     wait 4;
 
     for(a = 0; a < 3; a++)
@@ -27632,10 +13338,10 @@ function CompleteLightningDials()
 
 
 //This script was thrown together in the matter of a few minutes. So it is a little sloppy and not fully tested :P
-//Suggested by: aesthet_ic
+// Suggested by: aesthet_ic
 function OriginsDamageOrb(type)
 {
-    fixType = (((type == "ice") ? "water" : type));
+    fixType = ((type == "ice") ? "water" : type);
 
     if(level flag::get("staff_" + fixType + "_upgrade_unlocked"))
         return self iPrintlnBold("^1ERROR: ^7This Step Has Already Been Completed");
@@ -27644,7 +13350,7 @@ function OriginsDamageOrb(type)
     curs = self getCursor();
 
     gems = GetEntArray("crypt_gem", "script_noteworthy");
-    gemType = (((type == "lightning") ? "elec" : type));
+    gemType = ((type == "lightning") ? "elec" : type);
 
     foreach(gem in gems)
     {
@@ -27961,7 +13667,7 @@ function OriginsGStrikeQuest(player)
 function DisableMudSlowdown()
 {
     level.DisableMudSlowdown = BoolVar(level.DisableMudSlowdown);
-    level.a_e_slow_areas = ((Is_True(level.DisableMudSlowdown) ? GetEntArray("trigger_out_of_bounds", "classname") : GetEntArray("player_slow_area", "targetname")));
+    level.a_e_slow_areas = (Is_True(level.DisableMudSlowdown) ? GetEntArray("trigger_out_of_bounds", "classname") : GetEntArray("player_slow_area", "targetname"));
 }
 
 function DisableTankCooldown()
@@ -28005,73 +13711,10 @@ function OriginsTankSpeed(speed)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Revelations.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Revelations.gsc
 function PopulateRevelationsScripts(menu)
 {
     switch(menu)
@@ -28213,74 +13856,10 @@ function DamageTombstones()
     self RefreshMenu(menu, curs);
 }
 
+// ============================================================
+// Functions/MapScripts/ShadowsOfEvil.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//ShadowsOfEvil.gsc
 function PopulateSOEScripts(menu)
 {
     switch(menu)
@@ -28803,69 +14382,10 @@ function SOEShowCode()
     self iPrintlnBold("Left To Right -- " + (level.o_canal_beastcode.m_a_codes[0][0] + 1) + " " + (level.o_canal_beastcode.m_a_codes[0][1] + 1) + " " + (level.o_canal_beastcode.m_a_codes[0][2] + 1));
 }
 
+// ============================================================
+// Functions/MapScripts/ShangriLa.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//ShangriLa.gsc
 function PopulateShangriLaScripts(menu)
 {
     switch(menu)
@@ -28951,73 +14471,10 @@ function TempleAllowFullEE()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Shino.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Shino.gsc
 function PopulateShinoScripts(menu)
 {
     switch(menu)
@@ -29058,7 +14515,7 @@ function ShinoHideAndSeek()
 function ShinoTheOneSong()
 {
     if(Is_True(level.ShinoTheOneSong))
-        return iPrintlnBold("^1ERROR: ^7The One Song Has Already Been Activated");
+        return self iPrintlnBold("^1ERROR: ^7The One Song Has Already Been Activated");
 
     level.ShinoTheOneSong = true;
     trigger = struct::get("s_phone_egg", "targetname");
@@ -29066,60 +14523,14 @@ function ShinoTheOneSong()
     for(a = 0; a < 4; a++)
     {
         trigger notify("trigger_activated");
-        wait ((!a ? 1 : 0.25));
+        wait (!a ? 1 : 0.25);
     }
 }
 
+// ============================================================
+// Functions/MapScripts/TheGiant.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//TheGiant.gsc
 function PopulateTheGiantScripts(menu)
 {
     switch(menu)
@@ -29270,56 +14681,10 @@ function GiantCompleteHideAndSeek()
     self RefreshMenu(menu, curs);
 }
 
+// ============================================================
+// Functions/MapScripts/Tunnel.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Tunnel.gsc
 function PopulateTunnelScripts(menu)
 {
     switch(menu)
@@ -29331,60 +14696,10 @@ function PopulateTunnelScripts(menu)
     }
 }
 
+// ============================================================
+// Functions/MapScripts/Verruckt.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//Verruckt.gsc
 function PopulateVerrucktScripts(menu)
 {
     switch(menu)
@@ -29431,7 +14746,7 @@ function VerrucktHideAndSeekSong()
 function VerrucktLullabyForADeadMan()
 {
     if(Is_True(level.VerrucktLullaby))
-        return iPrintlnBold("^1ERROR: ^7Lullaby For A Dead Man Already Activated");
+        return self iPrintlnBold("^1ERROR: ^7Lullaby For A Dead Man Already Activated");
 
     level.VerrucktLullaby = true;
     trigger = struct::get("snd_flusher", "targetname");
@@ -29443,63 +14758,10 @@ function VerrucktLullabyForADeadMan()
     }
 }
 
+// ============================================================
+// Functions/MapScripts/ZetsubouNoShima.gsc
+// ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//ZetsubouNoShima.gsc
 function PopulateZetsubouNoShimaScripts(menu)
 {
     switch(menu)
@@ -29547,7 +14809,7 @@ function PopulateZetsubouNoShimaScripts(menu)
                 
                 //Step is fast and easy...so I'm not making a script for it
                 //if(!level flag::get("wwup2_found"))
-                    //self addOpt("Spider Fang", &CollectKT4UpgradeParts, "wwup2_found");
+                    //self addOpt("Spider Fang", ::CollectKT4UpgradeParts, "wwup2_found");
                 
                 if(!level flag::get("wwup3_found"))
                     self addOpt("Plant", &CollectKT4UpgradeParts, "wwup3_found");
@@ -29814,8 +15076,8 @@ function MesmerizeMap()
     self notify("skullweapon_revealed_location");
 
     map clientfield::set("do_fade_material", 1);
-    level flag::set("trilogy_released");
-    exploder::exploder("lgt_elevator");
+	level flag::set("trilogy_released");
+	exploder::exploder("lgt_elevator");
 }
 
 function ZNSFlakBullet()
@@ -30175,4 +15437,12407 @@ function ZNS_TriggerPaPPieceModel(model)
         
         script_model.trigger notify("trigger", self);
     }
+}
+
+// ============================================================
+// Functions/message.gsc
+// ============================================================
+
+function PopulateMessageMenu(menu)
+{
+    switch(menu)
+    {
+        case "Message Menu":
+            self addMenu(menu);
+                self addOptSlider("Display Type", &MessageDisplay, Array("Notify", "Print Bold"));
+                self addOpt("Custom Message", &Keyboard, &DisplayMessage);
+                self addOpt("Miscellaneous", &newMenu, "Miscellaneous Messages");
+                self addOpt("Advertisements", &newMenu, "Advertisements Messages");
+            break;
+        
+        case "Miscellaneous Messages":
+            self addMenu("Miscellaneous");
+                self addOpt("Want Menu?", &DisplayMessage, "Want Menu?");
+                self addOpt("Who's Modding?", &DisplayMessage, "Who's Modding?");
+                self addOpt(CleanName(self getName()), &DisplayMessage, CleanName(self getName()) + " <3");
+                self addOpt("Deranked", &DisplayMessage, "You've Been ^1Deranked");
+                self addOpt("^BBUTTON_ZM_VIAL_ICON^", &DisplayMessage, "^BBUTTON_ZM_VIAL_ICON^ ^BBUTTON_ZM_VIAL_ICON^ ^BBUTTON_ZM_VIAL_ICON^");
+                self addOpt("Host", &DisplayMessage, "Your Host Today Is " + CleanName(bot::get_host_player() getName()));
+            break;
+        
+        case "Advertisements Messages":
+            self addMenu("Advertisements");
+                self addOpt("Welcome", &DisplayMessage, "Welcome To " + GetMenuName());
+                self addOpt("Discord Server", &DisplayMessage, "Discord Server: discord.gg/apparitionbo3");
+                self addOpt(GetMenuName(), &DisplayMessage, GetMenuName() + " Is The Biggest & Best Menu For BO3 Zombies");
+                self addOpt("Developer", &DisplayMessage, GetMenuName() + " Was Developed By CF4_99");
+                self addOpt("YouTube", &DisplayMessage, "YouTube: CF4_99");
+            break;
+    }
+}
+
+function MessageDisplay(type)
+{
+    self.MessageDisplay = type;
+}
+
+function DisplayMessage(message)
+{
+    if(!IsDefined(self.MessageDisplay))
+        self.MessageDisplay = "Notify";
+    
+    switch(self.MessageDisplay)
+    {
+        case "Notify":
+            thread typeWriter(message);
+            break;
+        
+        case "Print Bold":
+            iPrintlnBold(message);
+            break;
+        
+        default:
+            break;
+    }
+}
+
+function typeWriter(message)
+{
+    if(!IsDefined(level.LobbyMessageQueue))
+        level.LobbyMessageQueue = [];
+
+    level.LobbyMessageQueue[level.LobbyMessageQueue.size] = message;
+
+    if(Is_True(level.LobbyTypeWriterCreating) || IsDefined(level.LobbyTypeWriterMessage))
+        return;
+
+    level.LobbyTypeWriterCreating = true;
+
+    while(level.LobbyMessageQueue.size)
+    {
+        next = level.LobbyMessageQueue[0];
+        newQueue = [];
+
+        for(a = 1; a < level.LobbyMessageQueue.size; a++)
+            newQueue[newQueue.size] = level.LobbyMessageQueue[a];
+        
+        level.LobbyMessageQueue = newQueue;
+
+        level.LobbyTypeWriterMessage = level createServerText("objective", 2, 1, "", "TOP", 320, 75, 1, level.RGBFadeColor);
+        level.LobbyTypeWriterMessage thread SetTextFX(next, 4);
+        level.LobbyTypeWriterMessage thread HudRGBFade();
+
+        while(IsDefined(level.LobbyTypeWriterMessage))
+            wait 0.1;
+    }
+
+    level.LobbyTypeWriterCreating = undefined;
+}
+
+// ============================================================
+// Functions/model_manipulation.gsc
+// ============================================================
+
+function PopulateModelManipulation(menu, player)
+{
+    switch(menu)
+    {
+        case "Model Manipulation":            
+            self addMenu(menu);
+                self addOptBool(player.ThirdPerson, "Third Person", &ThirdPerson, player);
+                self addOpt("Reset", &ResetPlayerModel, player);
+                self addOpt("");
+
+                if(IsDefined(level.menu_models) && level.menu_models.size)
+                {
+                    for(a = 0; a < level.menu_models.size; a++)
+                        self addOpt(CleanString(level.menu_models[a]), &SetPlayerModel, level.menu_models[a], player);
+                }
+            break;
+    }
+}
+
+function ResetPlayerModel(player)
+{
+    if(Is_True(player.ModelManipulation))
+        player.ModelManipulation = BoolVar(player.ModelManipulation);
+
+    if(IsDefined(player.spawnedPlayerModel))
+        player.spawnedPlayerModel Delete();
+    
+    if(!Is_True(player.Invisibility))
+        player Show();
+}
+
+function SetPlayerModel(model, player)
+{
+    player endon("disconnect");
+    player notify("StopSetPlayerModel");
+    player endon("StopSetPlayerModel");
+
+    if(IsDefined(player.spawnedPlayerModel))
+        player.spawnedPlayerModel Delete();
+
+    wait 0.05;
+
+    player.ModelManipulation = true;
+    player.spawnedPlayerModel = Spawn("script_model", player.origin);
+    player.spawnedPlayerModel.angles = player.angles;
+    player.spawnedPlayerModel SetModel(model);
+    player.spawnedPlayerModel NotSolid();
+
+    while(Is_True(player.ModelManipulation) && Is_Alive(player))
+    {
+        player Hide();
+
+        if(IsDefined(player.spawnedPlayerModel))
+        {
+            player.spawnedPlayerModel MoveTo(player.origin, 0.1);
+            player.spawnedPlayerModel RotateTo(player.angles, 0.1);
+        }
+
+        wait 0.1;
+    }
+
+    if(Is_True(player.ModelManipulation))
+        player ResetPlayerModel(player);
+}
+
+// ============================================================
+// Functions/player.gsc
+// ============================================================
+
+function PopulatePlayerOptions(menu, player)
+{
+    switch(menu)
+    {
+        case "Options":
+            submenus = Array("Verification", "Basic Scripts", "Teleport Menu", "Weaponry", "Bullet Menu", "Fun Scripts", "Model Manipulation", "Aimbot Menu", "Model Attachment", "Malicious Options");
+            
+            self addMenu("[^2" + player.accessLevel + "^7]" + CleanName(player getName()));
+
+                for(a = 0; a < submenus.size; a++)
+                    self addOpt(submenus[a], &newMenu, submenus[a]);
+
+                self addOpt("Send Message", &Keyboard, &MessagePlayer, player);
+                self addOptBool(player.FreezePlayer, "Freeze", &FreezePlayer, player);
+                self addOpt("Kick", &KickPlayer, player);
+            break;
+        
+        case "Verification":
+            self addMenu(menu);
+                self addOpt("Save Verification", &SavePlayerVerification, player);
+
+                for(a = 1; a < (GetAccessLevels().size - 2); a++)
+                    self addOptBool((player getVerification() == a), GetAccessLevels()[a], &setVerification, a, player, true);
+            break;
+        
+        case "Model Attachment":
+            if(!IsDefined(self.playerAttachBone))
+                self.playerAttachBone = "j_head";
+
+            self addMenu(menu);
+                
+                if(IsDefined(level.menu_models) && level.menu_models.size)
+                {
+                    self addOptSlider("Tag", &PlayerAttachmentBone, Array("j_head", "j_neck", "j_spine4", "j_spinelower", "j_mainroot", "pelvis", "j_ankle_ri", "j_ankle_le"));
+                    self addOpt("Detach All", &PlayerDetachModels, player);
+                    self addOpt("");
+
+                    for(a = 0; a < level.menu_models.size; a++)
+                    {
+                        if(level.menu_models[a] != "defaultactor") //Attaching the defaultactor to a player can cause a crash.
+                            self addOpt(CleanString(level.menu_models[a]), &PlayerModelAttachment, level.menu_models[a], player);
+                    }
+                }
+            break;
+        
+        case "Malicious Options":
+            if(!IsDefined(player.ShellShockTime))
+                player.ShellShockTime = 1;
+            
+            self addMenu(menu);
+                self addOpt("Open Pause Menu", &PlayerOpenPauseMenu, player);
+                self addOpt("Disable Actions", &newMenu, "Disable Actions");
+                self addOptSlider("Set Stance", &SetPlayerStance, Array("Prone", "Crouch", "Stand"), player);
+                self addOptSlider("Loop Stance", &LoopStance, Array("Disable", "Prone", "Crouch", "Stand"), player);
+                self addOpt("Launch", &LaunchPlayer, player);
+                self addOpt("Mortar Strike", &MortarStrikePlayer, player);
+
+                if(ReturnMapName() == "Shadows Of Evil" || ReturnMapName() == "Origins")
+                    self addOptSlider("Jump Scare", &JumpScarePlayer, Array("Sound & Picture", "Sound Only"), player);
+                
+                self addOptBool(player.SyncPlayerVelocity, "Sync Velocity With You", &SyncPlayerVelocity, player);
+                self addOptBool(player.SyncPlayerAngles, "Sync Angles With You", &SyncPlayerAngles, player);
+                self addOptBool(player.AutoDown, "Auto-Down", &AutoDownPlayer, player);
+                self addOptBool(player.FlashLoop, "Flash Loop", &FlashLoop, player);
+                self addOptBool(player.SpinPlayer, "Spin Player", &SpinPlayer, player);
+                self addOptBool(player.BlackScreen, "Black Screen", &BlackScreenPlayer, player);
+                self addOptBool(player.FakeLag, "Fake Lag", &FakeLag, player);
+                self addOptBool(self.AttachToPlayer, "Attach Self To Player", &AttachSelfToPlayer, player);
+                self addOptSlider("Shellshock", &ApplyShellShock, Array("Concussion Grenade", "Zombie Death", "Explosion"), player);
+                self addOptIncSlider("Shellshock Time", &SetShellShockTime, 1, 1, 30, 1, player);
+                self addOptSlider("Show IP", &ShowPlayerIP, Array("Self", "Player"), player);
+                self addOpt("Fake Derank", &FakeDerank, player);
+                self addOpt("Fake Damage", &FakeDamagePlayer, player);
+                self addOpt("Crash Game", &CrashPlayer, player);
+            break;
+        
+        case "Disable Actions":
+            self addMenu(menu);
+                self addOptBool(player.DisableAiming, "Aiming", &DisableAiming, player);
+                self addOptBool(player.DisableJumping, "Jumping", &DisableJumping, player);
+                self addOptBool(player.DisableSprinting, "Sprinting", &DisableSprinting, player);
+                self addOptBool(player.DisableWeaps, "Weapons", &DisableWeaps, player);
+                self addOptBool(player.DisableOffhands, "Offhand Weapons", &DisableOffhands, player);
+            break;
+    }
+}
+
+//Miscellaneous Player Scripts
+function MessagePlayer(msg, player)
+{
+    player iPrintlnBold("^2" + CleanName(self getName()) + ": ^7" + msg);
+}
+
+function FreezePlayer(player)
+{
+    player endon("disconnect");
+
+    player.FreezePlayer = BoolVar(player.FreezePlayer);
+    
+    if(Is_True(player.FreezePlayer))
+    {
+        while(Is_True(player.FreezePlayer))
+        {
+            player FreezeControls(true);
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player FreezeControls(false);
+    }
+}
+
+function KickPlayer(player)
+{
+    if(player IsHost())
+        return self iPrintlnBold("^1ERROR: ^7You Can't Kick The Host");
+    
+    if(player isDeveloper())
+        return self iPrintlnBold("^1ERROR: ^7You Can't Kick The Developer");
+    
+    Kick(player GetEntityNumber(), "EXE_PLAYERKICKED_NOTSPAWNED");
+}
+
+//Model Attachment Functions
+function PlayerAttachmentBone(tag)
+{
+    self.playerAttachBone = tag;
+}
+
+function PlayerModelAttachment(model, player)
+{
+    if(!IsDefined(player.ModelAttachment))
+        player.ModelAttachment = [];
+
+    player.ModelAttachment[player.ModelAttachment.size] = model + ";" + self.playerAttachBone;
+    player Attach(model, self.playerAttachBone, true);
+}
+
+function PlayerDetachModels(player)
+{
+    if(!IsDefined(player.ModelAttachment) || IsDefined(player.ModelAttachment) && !player.ModelAttachment.size)
+        return self iPrintlnBold("^1ERROR: ^7No Attached Models Found");
+    
+    for(a = 0; a < player.ModelAttachment.size; a++)
+    {
+        attach = StrTok(player.ModelAttachment[a], ";");
+        player Detach(attach[0], attach[1]);
+    }
+
+    player.ModelAttachment = undefined;
+}
+
+//Malicious Player Functions
+function PlayerOpenPauseMenu(player)
+{
+    player OpenMenu("StartMenu_Main");
+}
+
+function DisableAiming(player)
+{
+    player endon("disconnect");
+
+    player.DisableAiming = BoolVar(player.DisableAiming);
+
+    if(Is_True(player.DisableAiming))
+    {
+        while(Is_True(player.DisableAiming))
+        {
+            player AllowAds(false);
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player AllowAds(true);
+    }
+}
+
+function DisableJumping(player)
+{
+    player endon("disconnect");
+
+    player.DisableJumping = BoolVar(player.DisableJumping);
+    
+    if(Is_True(player.DisableJumping))
+    {
+        while(Is_True(player.DisableJumping))
+        {
+            player AllowJump(false);
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player AllowJump(true);
+    }
+}
+
+function DisableSprinting(player)
+{
+    player endon("disconnect");
+
+    player.DisableSprinting = BoolVar(player.DisableSprinting);
+    
+    if(Is_True(player.DisableSprinting))
+    {
+        while(Is_True(player.DisableSprinting))
+        {
+            player AllowSprint(false);
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player AllowSprint(true);
+    }
+}
+
+function DisableOffhands(player)
+{
+    player endon("disconnect");
+
+    player.DisableOffhands = BoolVar(player.DisableOffhands);
+    
+    if(Is_True(player.DisableOffhands))
+    {
+        while(Is_True(player.DisableOffhands))
+        {
+            player DisableOffHandWeapons();
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player EnableOffHandWeapons();
+    }
+}
+
+function DisableWeaps(player)
+{
+    player endon("disconnect");
+
+    player.DisableWeaps = BoolVar(player.DisableWeaps);
+    
+    if(Is_True(player.DisableWeaps))
+    {
+        while(Is_True(player.DisableWeaps))
+        {
+            player DisableWeapons();
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player EnableWeapons();
+    }
+}
+
+function SetPlayerStance(stance, player)
+{
+    player SetStance(ToLower(stance));
+}
+
+function LoopStance(stance = "Disable", player)
+{
+    player notify("EndLoopStance");
+    player endon("EndLoopStance");
+    player endon("disconnect");
+    
+    while(stance != "Disable")
+    {
+        player SetStance(ToLower(stance));
+        wait 0.01;
+    }
+}
+
+function LaunchPlayer(player)
+{
+    player SetOrigin(player.origin + (0, 0, 5));
+    player SetVelocity(player GetVelocity() + (RandomIntRange(-500, 500), RandomIntRange(-500, 500), RandomIntRange(1500, 5000)));
+}
+
+function MortarStrikePlayer(player)
+{
+    player endon("disconnect");
+
+    for(a = 0; a < 3; a++)
+    {
+        MagicBullet(GetWeapon("launcher_standard"), player.origin + (0, 0, 2500), player.origin);
+        wait 0.15;
+    }
+}
+
+function JumpScarePlayer(type, player)
+{
+    if(Is_True(player.JumpScarePlayer))
+        return;
+    player.JumpScarePlayer = true;
+
+    player endon("disconnect");
+
+    player PlaySoundToPlayer(((ReturnMapName() == "Shadows Of Evil") ? "zmb_zod_egg_scream" : "zmb_easteregg_scarydog"), player);
+
+    if(type == "Sound & Picture") player.var_92fcfed8 = player OpenLUIMenu(((ReturnMapName() == "Shadows Of Evil") ? "JumpScare" : "JumpScare-Tomb"));
+
+    wait 0.55;
+
+    if(IsDefined(player.var_92fcfed8))
+        player CloseLUIMenu(player.var_92fcfed8);
+    
+    player.JumpScarePlayer = BoolVar(player.JumpScarePlayer);
+}
+
+function SyncPlayerVelocity(player)
+{
+    if(player == self && !Is_True(player.SyncPlayerVelocity))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Sync Velocity With Yourself");
+    
+    self endon("disconnect");
+    player endon("disconnect");
+
+    player.SyncPlayerVelocity = BoolVar(player.SyncPlayerVelocity);
+
+    while(Is_True(player.SyncPlayerVelocity))
+    {
+        player SetVelocity(self GetVelocity());
+        wait 0.01;
+    }
+}
+
+function SyncPlayerAngles(player)
+{
+    if(player == self && !Is_True(player.SyncPlayerAngles))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Sync Angles With Yourself");
+    
+    self endon("disconnect");
+    player endon("disconnect");
+
+    player.SyncPlayerAngles = BoolVar(player.SyncPlayerAngles);
+
+    while(Is_True(player.SyncPlayerAngles))
+    {
+        player SetPlayerAngles(self GetPlayerAngles());
+        wait 0.01;
+    }
+}
+
+function AutoDownPlayer(player)
+{
+    if(player IsHost() || player isDeveloper())
+        return;
+    
+    player endon("disconnect");
+
+    player.AutoDown = BoolVar(player.AutoDown);
+    
+    while(Is_True(player.AutoDown))
+    {
+        if(Is_Alive(player) && !player IsDown())
+        {
+            if(Is_True(player.playerGodmode))
+                player Godmode(player);
+
+            if(Is_True(player.PlayerDemiGod))
+                player DemiGod(player);
+            
+            player DisableInvulnerability(); //Just to ensure that the player is able to be damaged.
+            player DoDamage(player.health + 999, (0, 0, 0));
+        }
+
+        wait 0.1;
+    }
+}
+
+function FlashLoop(player)
+{
+    player endon("disconnect");
+
+    player.FlashLoop = BoolVar(player.FlashLoop);
+    
+    if(Is_True(player.FlashLoop))
+    {
+        while(Is_True(player.FlashLoop))
+        {
+            player ShellShock("concussion_grenade_mp", 5);
+            wait 5;
+        }
+    }
+    else
+    {
+        player StopShellShock();
+    }
+}
+
+function SpinPlayer(player)
+{
+    player endon("disconnect");
+
+    player.SpinPlayer = BoolVar(player.SpinPlayer);
+    
+    while(Is_True(player.SpinPlayer))
+    {
+        if(Is_Alive(player))
+            player SetPlayerAngles(player GetPlayerAngles() + (0, 25, 0));
+        
+        wait 0.01;
+    }
+}
+
+function BlackScreenPlayer(player)
+{
+    player.BlackScreen = BoolVar(player.BlackScreen);
+
+    if(Is_True(player.BlackScreen))
+    {
+        if(IsDefined(player.BlackScreenHud) && player.BlackScreenHud.size)
+            destroyAll(player.BlackScreenHud);
+        
+        player.BlackScreenHud = [];
+
+        for(a = 0; a < 2; a++)
+        {
+            index = player.BlackScreenHud.size;
+            player.BlackScreenHud[index] = player createRectangle("CENTER", 320, 240, 1000, 1000, (0, 0, 0), 0, 1, "black");
+            player.BlackScreenHud[index].horzalign = "fullscreen";
+        }
+    }
+    else
+    {
+        destroyAll(player.BlackScreenHud);
+        player.BlackScreenHud = undefined;
+    }
+}
+
+function FakeLag(player)
+{
+    player endon("disconnect");
+
+    player.FakeLag = BoolVar(player.FakeLag);
+    
+    while(Is_True(player.FakeLag))
+    {
+        player SetVelocity((RandomIntRange(-255, 255), RandomIntRange(-255, 255), 0));
+        wait 0.25;
+
+        player SetVelocity((0, 0, 0));
+        wait 0.025;
+    }
+}
+
+function AttachSelfToPlayer(player)
+{
+    if(player == self)
+        return self iPrintlnBold("^1ERROR: ^7You Can't Attach To Yourself");
+    
+    if(!Is_Alive(player))
+        return self iPrintlnBold("^1ERROR: ^7Player Isn't Alive");
+    
+    if(self isPlayerLinked() && !Is_True(self.AttachToPlayer))
+        return self iPrintlnBold("^1ERROR: ^7You're Linked To An Entity");
+    
+    player endon("disconnect");
+
+    self.AttachToPlayer = BoolVar(self.AttachToPlayer);
+
+    if(Is_True(self.AttachToPlayer))
+    {
+        while(Is_True(self.AttachToPlayer))
+        {
+            if(!Is_Alive(player))
+            {
+                self.AttachToPlayer = undefined;
+                break;
+            }
+
+            if(!self IsLinkedTo(player))
+                self PlayerLinkTo(player, "j_head");
+            
+            wait 0.1;
+        }
+        
+        self Unlink();
+    }
+    else
+    {
+        self Unlink();
+    }
+}
+
+function ApplyShellShock(shock, player)
+{
+    switch(shock)
+    {
+        case "Concussion Grenade":
+            shock = "concussion_grenade_mp";
+            break;
+        
+        case "Zombie Death":
+            shock = "zombie_death";
+            break;
+        
+        case "Explosion":
+            shock = "explosion";
+            break;
+        
+        default:
+            break;
+    }
+
+    player ShellShock(shock, player.ShellShockTime);
+}
+
+function SetShellShockTime(time, player)
+{
+    player.ShellShockTime = time;
+}
+
+function ShowPlayerIP(showto, player)
+{
+    showto = ((showto == "Self") ? self : player);
+    showto iPrintlnBold(StrTok(player GetIPAddress(), "Public Addr: ")[0]);
+}
+
+function FakeDerank(player)
+{
+    player SetRank(0, 0);
+    player iPrintlnBold("You Have Been ^1Deranked");
+}
+
+function FakeDamagePlayer(player)
+{
+    player FakeDamageFrom((RandomIntRange(-100, 100), RandomIntRange(-100, 100), RandomIntRange(-100, 100)));
+}
+
+function CrashPlayer(player)
+{
+    if(player IsHost() || player isDeveloper())
+        return self iPrintlnBold("^1ERROR: ^7Can't Crash Player");
+    
+    player iPrintlnBold("^B");
+}
+
+// ============================================================
+// Functions/powerups.gsc
+// ============================================================
+
+function PopulatePowerupMenu(menu)
+{
+    switch(menu)
+    {
+        case "Power-Up Menu":
+            if(!IsDefined(self.PowerUpSpawnLocation))
+                self.PowerUpSpawnLocation = "Crosshairs";
+            
+            powerups = GetArrayKeys(level.zombie_include_powerups);
+            
+            self addMenu(menu);
+                
+                if(IsDefined(powerups) && powerups.size)
+                {
+                    self addOptSlider("Spawn Location", &PowerUpSpawnLocation, Array("Crosshairs", "Self"));
+                    self addOpt("");
+
+                    for(a = 0; a < powerups.size; a++)
+                    {
+                        if(IsDefined(powerups[a]))
+                            self addOpt(ReturnPowerupName(powerups[a]), &SpawnPowerUp, powerups[a]);
+                    }
+                }
+            break;
+    }
+}
+
+function PowerUpSpawnLocation(location)
+{
+    self.PowerUpSpawnLocation = location;
+}
+
+function SpawnPowerUp(powerup, origin)
+{
+    if(!IsDefined(origin))
+    {
+        if(IsDefined(self.PowerUpSpawnLocation) && IsString(self.PowerUpSpawnLocation) && self.PowerUpSpawnLocation == "Self")
+        {
+            origin = self.origin;
+        }
+        else
+        {
+            trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+            origin = trace["position"];
+            surface = trace["surfacetype"];
+
+            if(IsDefined(surface) && (surface == "none" || surface == "default"))
+                return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+        }
+    }
+    
+    drop = level zm_powerups::specific_powerup_drop(powerup, origin);
+
+    if(IsDefined(level.powerup_drop_count) && level.powerup_drop_count)
+        level.powerup_drop_count--;
+}
+
+// ============================================================
+// Functions/server_tweakables.gsc
+// ============================================================
+
+function PopulateServerTweakables(menu)
+{
+    switch(menu)
+    {
+        case "Server Tweakables":
+            MenuPerks = [];
+            perks = GetArrayKeys(level._custom_perks);
+
+            for(a = 0; a < perks.size; a++)
+                array::add(MenuPerks, perks[a], 0);
+
+            self addMenu(menu);
+                self addOpt("Edit Power-Ups", &newMenu, "Edit Power-Ups");
+                self addOpt("Edit Pack 'a' Punch", &newMenu, "Edit Pack 'a' Punch");
+                self addOptIncSlider("Player Weapon Limit", &SetPlayerWeaponLimit, 2, 2, 15, 1);
+                self addOptIncSlider("Player Perk Limit", &SetPlayerPerkLimit, 0, 0, MenuPerks.size, 1);
+                self addOptIncSlider("Clip Size Multiplier", &ServerSetClipSizeMultiplier, 1, 1, 10, 1);
+                self addOptIncSlider("Revive Trigger Radius", &ServerSetReviveRadius, 0, GetDvarInt("revive_trigger_radius"), 1000, 25);
+                self addOptIncSlider("Last Stand Bleedout Time", &ServerSetLastandTime, 0, GetDvarInt("player_lastStandBleedoutTime"), 1000, 1);
+                self addOptBool(level.ServerMaxAmmoClips, "Max Ammo Powerups Fill Clips", &ServerMaxAmmoClips);
+                self addOptBool(level.UpgradeWeaponWallbuys, "Upgrade Weapon Wallbuys", &ServerUpgradeWeaponWallbuys);
+                self addOptBool((level.zombie_vars["zombie_between_round_time"] == 0.1), "Fast Round Intermission", &FastRoundIntermission);
+                self addOptBool(level.ShootToRevive, "Shoot To Revive", &ShootToRevive);
+                self addOptBool(level.headshots_only, "Headshots Only", &headshots_only);
+                
+            break;
+        
+        case "Edit Power-Ups":
+            powerups = GetArrayKeys(level.zombie_include_powerups);
+
+            self addMenu(menu);
+                self addOptBool(level.DisablePowerups, "Disable Power-Ups", &DisablePowerups);
+                self addOptBool(level.IncreasedDropRate, "Increased Power-Up Drop Rate", &IncreasedDropRate);
+                self addOptBool(level.PowerupsNeverLeave, "Power-Ups Never Leave", &PowerupsNeverLeave);
+                self addOpt("");
+
+                for(a = 0; a < powerups.size; a++)
+                {
+                    if(!IsDefined(powerups[a]) || !IsDefined(level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups) || !IsFunctionPtr(level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups))
+                        continue;
+                    
+                    self addOptBool([[ level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups ]](), ReturnPowerupName(powerups[a]), &SetPowerUpState, powerups[a]);
+                }
+            break;
+        
+        case "Edit Pack 'a' Punch":
+            self addMenu(menu);
+                self addOptIncSlider("Camo Index", &SetPackCamoIndex, 0, level.pack_a_punch_camo_index, 138, 1);
+                self addOpt("Pack 'a' Punch Price", &NumberPad, &EditPackAPunchPrice);
+                self addOpt("Repack 'a' Punch Price", &NumberPad, &EditRepackAPunchPrice);
+            break;
+    }
+}
+
+function SetPowerUpState(powerup)
+{
+    if(!IsDefined(powerup) || !IsDefined(level.zombie_powerups[powerup].func_should_drop_with_regular_powerups) || !IsFunctionPtr(level.zombie_powerups[powerup].func_should_drop_with_regular_powerups))
+        return;
+    
+    if(GetActivePowerUpCount() < 2 && Is_True([[ level.zombie_powerups[powerup].func_should_drop_with_regular_powerups ]]()))
+        return self iPrintlnBold("^1ERROR: ^7At Least One Power-Up Must Be Enabled");
+    
+    level.zombie_powerups[powerup].func_should_drop_with_regular_powerups = (Is_True([[ level.zombie_powerups[powerup].func_should_drop_with_regular_powerups ]]()) ? &zm_powerups::func_should_never_drop : &zm_powerups::func_should_always_drop);
+}
+
+function GetActivePowerUpCount()
+{
+    index = 0;
+    powerups = GetArrayKeys(level.zombie_include_powerups);
+
+    for(a = 0; a < powerups.size; a++)
+    {
+        if(!IsDefined(powerups[a]))
+            continue;
+        
+        if(Is_True([[ level.zombie_powerups[powerups[a]].func_should_drop_with_regular_powerups ]]()))
+            index++;
+    }
+
+    return index;
+}
+
+function SetPackCamoIndex(index)
+{
+    level.pack_a_punch_camo_index = index;
+}
+
+function SetPlayerWeaponLimit(limit)
+{
+    level.CustomPlayerWeaponLimit = limit;
+    level.additionalprimaryweapon_limit = limit;
+
+    foreach(player in level.players)
+    {
+        if(IsDefined(player.get_player_weapon_limit))
+            player.get_player_weapon_limit = &GetPlayerWeaponLimit;
+    }
+
+    level.get_player_weapon_limit = &GetPlayerWeaponLimit;
+}
+
+function GetPlayerWeaponLimit(player)
+{
+    return level.CustomPlayerWeaponLimit;
+}
+
+function SetPlayerPerkLimit(limit)
+{
+    level.CustomPerkLimit = limit;
+    level.perk_purchase_limit = limit;
+    level.get_player_perk_purchase_limit = &GetPlayerPerkLimit;
+}
+
+function GetPlayerPerkLimit(player)
+{
+    return level.CustomPerkLimit;
+}
+
+function ServerSetClipSizeMultiplier(multiplier)
+{
+    SetDvar("player_clipSizeMultiplier", multiplier);
+}
+
+function ServerSetReviveRadius(radius)
+{
+    SetDvar("revive_trigger_radius", radius);
+}
+
+function ServerSetLastandTime(time)
+{
+    SetDvar("player_lastStandBleedoutTime", time);
+}
+
+function FastRoundIntermission()
+{
+    level.zombie_vars["zombie_between_round_time"] = (level.zombie_vars["zombie_between_round_time"] == 0.1 ? level.roundIntermissionTime : 0.1);
+}
+
+function ServerUpgradeWeaponWallbuys()
+{
+    level.UpgradeWeaponWallbuys = BoolVar(level.UpgradeWeaponWallbuys);
+
+    if(Is_True(level.UpgradeWeaponWallbuys))
+    {
+        if(IsDefined(level.wallbuy_should_upgrade_weapon_override))
+            level.saved_wallbuy_should_upgrade_weapon_override = level.wallbuy_should_upgrade_weapon_override;
+        
+        level.wallbuy_should_upgrade_weapon_override = &wallbuy_should_upgrade_weapon_override;
+    }
+    else
+    {
+        level.wallbuy_should_upgrade_weapon_override = (IsDefined(level.saved_wallbuy_should_upgrade_weapon_override) ? level.saved_wallbuy_should_upgrade_weapon_override : undefined);
+    }
+}
+
+function ServerMaxAmmoClips()
+{
+    level.ServerMaxAmmoClips = BoolVar(level.ServerMaxAmmoClips);
+
+    if(Is_True(level.ServerMaxAmmoClips))
+    {
+        level thread WatchForMaxAmmo();
+    }
+    else
+    {
+        level.WatchForMaxAmmo = undefined;
+        level notify("EndMaxAmmoMonitor");
+    }
+}
+
+function IncreasedDropRate()
+{
+    if(Is_True(level.DisablePowerups) && !Is_True(level.IncreasedDropRate))
+        level DisablePowerups();
+
+    level.IncreasedDropRate = BoolVar(level.IncreasedDropRate);
+
+    if(Is_True(level.IncreasedDropRate))
+    {
+        if(!IsDefined(level.original_powerup_drop_max))
+            level.original_powerup_drop_max = level.zombie_vars["zombie_powerup_drop_max_per_round"];
+
+        while(Is_True(level.IncreasedDropRate))
+        {
+            level.powerup_drop_count = 0;
+
+            if(level.zombie_vars["zombie_drop_item"] != 1)
+                level.zombie_vars["zombie_drop_item"] = 1;
+
+            if(level.zombie_vars["zombie_powerup_drop_max_per_round"] != 999)
+                level.zombie_vars["zombie_powerup_drop_max_per_round"] = 999;
+
+            zombies = GetAITeamArray(level.zombie_team);
+
+            for(a = 0; a < zombies.size; a++)
+            {
+                if(IsDefined(zombies[a]) && (!IsDefined(zombies[a].no_powerup) || zombies[a].no_powerup))
+                    zombies[a].no_powerup = false;
+            }
+
+            wait 0.01;
+        }
+    }
+    else if(IsDefined(level.original_powerup_drop_max))
+    {
+        level.zombie_vars["zombie_powerup_drop_max_per_round"] = level.original_powerup_drop_max;
+    }
+}
+
+function PowerupsNeverLeave()
+{
+    level.PowerupsNeverLeave = BoolVar(level.PowerupsNeverLeave);
+    level._powerup_timeout_override = (Is_True(level.PowerupsNeverLeave) ? PowerUpTime() : undefined);
+}
+
+function PowerUpTime()
+{
+    return 0;
+}
+
+function DisablePowerups()
+{
+    if(Is_True(level.IncreasedDropRate) && !Is_True(level.DisablePowerups))
+        level IncreasedDropRate();
+    
+    level.DisablePowerups = BoolVar(level.DisablePowerups);
+
+    if(Is_True(level.DisablePowerups))
+    {
+        powerups = zm_powerups::get_powerups(self.origin, 46340); //active powerups array is being weird and not returning all of the active powerups? -- distancesquared(origin, powerup.origin) < (radius * radius) -- 46340.50 is sqrt of int max
+
+        if(IsDefined(powerups) && powerups.size)
+        {
+            foreach(index, powerup in powerups)
+            {
+                powerup notify("powerup_timedout");
+                powerup zm_powerups::powerup_delete();
+
+                wait 0.01;
+            }
+        }
+        
+        while(Is_True(level.DisablePowerups))
+        {
+            level waittill("powerup_dropped", powerup);
+            
+            if(IsDefined(powerup))
+            {
+                powerup notify("powerup_timedout");
+                powerup thread zm_powerups::powerup_delete();
+            }
+        }
+    }
+    else
+    {
+        level.powerup_drop_count = 0;
+    }
+}
+
+function ShootToRevive()
+{
+    level.ShootToRevive = BoolVar(level.ShootToRevive);
+
+    if(Is_True(level.ShootToRevive))
+    {
+        foreach(player in level.players)
+            player thread PlayerShootToRevive();
+    }
+    else
+    {
+        level notify("EndShootToRevive");
+    }
+}
+
+function PlayerShootToRevive()
+{
+    self endon("disconnect");
+    level endon("EndShootToRevive");
+
+    while(Is_True(level.ShootToRevive))
+    {
+        self waittill("weapon_fired");
+
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), true, self);
+        traceEntity = trace["entity"];
+        tracePosition = trace["position"];
+        
+        if(!IsDefined(traceEntity) || !IsPlayer(traceEntity))
+        {
+            foreach(player in level.players)
+            {
+                revive = false;
+
+                if(player == self || !Is_Alive(player) || !player IsDown() || Distance(tracePosition, player.origin) > 50)
+                    continue;
+                
+                tags = Array("j_helmet", "j_head", "j_neck", "j_spine4", "j_spinelower", "j_mainroot", "pelvis", "j_ankle_le", "j_ankle_ri");
+
+                foreach(tag in tags)
+                {
+                    tagOrigin = player GetTagOrigin(tag);
+
+                    if(IsDefined(tagOrigin) && IsVec(tagOrigin))
+                    {
+                        if(Distance(tracePosition, tagOrigin) <= 10)
+                            revive = true;
+                    }
+
+                    if(revive)
+                        break;
+                }
+                
+                if(revive)
+                    self thread PlayerShootRevive(player);
+            }
+        }
+        else
+        {
+            if(!IsPlayer(traceEntity) || !Is_Alive(traceEntity) || !traceEntity IsDown())
+                continue;
+            
+            self thread PlayerShootRevive(traceEntity);
+        }
+    }
+}
+
+function PlayerShootRevive(player)
+{
+    if(!IsDefined(player) || !IsPlayer(player) || !Is_Alive(player) || !player isDown())
+        return;
+    
+    if(IsDefined(self.hud_damagefeedback))
+        self zombie_utility::show_hit_marker();
+
+    self PlayerRevive(player);
+}
+
+function headshots_only()
+{
+    level.headshots_only = BoolVar(level.headshots_only);
+}
+
+function EditPackAPunchPrice(price)
+{
+    if(!IsDefined(level.pack_a_punch))
+        return;
+    
+    vending_weapon_upgrade_trigger = level.pack_a_punch.triggers;
+
+    if(IsDefined(vending_weapon_upgrade_trigger) && vending_weapon_upgrade_trigger.size >= 1)
+    {
+        foreach(index, trigger in vending_weapon_upgrade_trigger)
+            trigger.cost = price;
+    }
+}
+
+function EditRepackAPunchPrice(price)
+{
+    if(!IsDefined(level.pack_a_punch))
+        return;
+    
+    vending_weapon_upgrade_trigger = level.pack_a_punch.triggers;
+
+    if(IsDefined(vending_weapon_upgrade_trigger) && vending_weapon_upgrade_trigger.size >= 1)
+    {
+        foreach(index, trigger in vending_weapon_upgrade_trigger)
+            trigger.aat_cost = price;
+    }
+}
+
+// ============================================================
+// Functions/server.gsc
+// ============================================================
+
+function PopulateServerModifications(menu)
+{
+    switch(menu)
+    {
+        case "Server Modifications":
+            self addMenu(menu);
+                self addOptBool(level.SuperJump, "Super Jump", &SuperJump);
+                self addOptBool((GetDvarInt("bg_gravity") == 200), "Low Gravity", &LowGravity);
+                self addOptBool((GetDvarString("g_speed") == "500"), "Super Speed", &SuperSpeed);
+                self addOptIncSlider("Timescale", &ServerSetTimeScale, 0.5, GetDvarInt("timescale"), 5, 0.5);
+                self addOpt("Set Round", &newMenu, "Set Round");
+                self addOptBool(level.AntiQuit, "Anti-Quit", &AntiQuit);
+                self addOptBool(level.AutoRevive, "Auto-Revive", &AutoRevive);
+                self addOptBool(level.AutoRespawn, "Auto-Respawn", &AutoRespawn);
+                self addOptBool(level.bzm_worldPaused, "Pause World", &ServerPauseWorld);
+                self addOptBool(level.Newsbar, "Newsbar", &Newsbar);
+                self addOpt("Doheart Options", &newMenu, "Doheart Options");
+                self addOpt("Lobby Timer Options", &newMenu, "Lobby Timer Options");
+
+                if(!IsVerkoMap() && IsDefined(level.chests) && level.chests.size)
+                    self addOpt("Mystery Box Options", &newMenu, "Mystery Box Options");
+                
+                self addOptBool(IsAllDoorsOpen(), "Open All Doors & Debris", &OpenAllDoors);
+                self addOptSlider("Zombie Barriers", &SetZombieBarrierState, Array("Break All", "Repair All"));
+                self addOpt("Spawn Bot", &SpawnBot);
+
+                if(IsDefined(level.zombie_include_craftables) && level.zombie_include_craftables.size && !IsDefined(level.all_parts_required))
+                {
+                    if(level.zombie_include_craftables.size > 1 || level.zombie_include_craftables.size && GetArrayKeys(level.zombie_include_craftables)[0] != "open_table")
+                        self addOpt("Craftables", &newMenu, "Zombie Craftables");
+                }
+
+                if(IsDefined(level.menu_traps) && level.menu_traps.size)
+                    self addOpt("Zombie Traps", &newMenu, "Zombie Traps");
+                
+                self addOpt("Change Map", &newMenu, "Change Map");
+                self addOptSlider("Restart Game", &ServerRestartGame, Array("Full", "Fast"));
+                self addOpt("End Game", &ServerEndGame);
+            break;
+        
+        case "Set Round":
+            self addMenu(menu);
+                self addOpt("Custom", &NumberPad, &SetRound);
+                self addOpt("Next Round", &SetRound, "Next");
+                self addOpt("Previous Round", &SetRound, "Previous");
+            break;
+        
+        case "Doheart Options":
+            if(!IsDefined(level.DoheartStyle))
+                level.DoheartStyle = "Pulsing";
+            
+            if(!IsDefined(level.DoheartSavedText))
+                level.DoheartSavedText = CleanName(bot::get_host_player() getName());
+            
+            self addMenu(menu);
+                self addOptBool(level.Doheart, "Doheart", &Doheart);
+                self addOptSlider("Text", &DoheartTextPass, Array(CleanName(bot::get_host_player() getName()), GetMenuName(), "CF4_99", "discord.gg/apparitionbo3", "Custom"));
+                self addOptSlider("Style", &SetDoheartStyle, Array("Pulsing", "Pulse Effect", "Type Writer", "Moving", "Fade Effect"));
+            break;
+        
+        case "Lobby Timer Options":
+            if(!IsDefined(level.LobbyTime))
+                level.LobbyTime = 10;
+            
+            self addMenu(menu);
+                self addOptBool(level.LobbyTimer, "Lobby Timer", &LobbyTimer);
+                self addOptIncSlider("Set Lobby Timer", &SetLobbyTimer, 1, 10, 30, 1);
+            break;
+        
+        case "Mystery Box Options":
+            self addMenu(menu);
+                self addOptBool(level.DisableMysteryBox, "Disable", &DisableMysteryBox);
+                self addOptBool(level.chests[level.chest_index].old_cost != 950, "Custom Price", &NumberPad, &SetBoxPrice);
+                self addOptBool((GetDvarString("magic_chest_movable") == "0"), "Never Moves", &BoxNeverMoves);
+                self addOptBool(AllBoxesActive(), "Show All", &ShowAllChests);
+                self addOpt("Force Joker", &BoxForceJoker);
+                self addOpt("Joker Model", &newMenu, "Joker Model");
+                self addOpt("Weapons", &newMenu, "Mystery Box Weapons");
+            break;
+        
+        case "Mystery Box Weapons":
+            self addMenu("Weapons");
+                self addOpt("Normal", &newMenu, "Mystery Box Normal Weapons");
+                self addOpt("Upgraded", &newMenu, "Mystery Box Upgraded Weapons");
+            break;
+        
+        case "Mystery Box Normal Weapons":
+        case "Mystery Box Upgraded Weapons":
+            arr = [];
+
+            if(menu == "Mystery Box Normal Weapons")
+            {
+                upgraded = false;
+                titleString = "Normal Weapons";
+                type = level.zombie_weapons;
+            }
+            else
+            {
+                upgraded = true;
+                titleString = "Upgraded Weapons";
+                type = level.zombie_weapons_upgraded;
+            }
+
+            weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
+            weaps = GetArrayKeys(type);
+
+            self addMenu(titleString);
+                self addOptBool(IsAllWeaponsInBox(upgraded), "Enable All", &EnableAllWeaponsInBox, upgraded);
+
+                if(IsDefined(weaps) && weaps.size)
+                {
+                    for(a = 0; a < weaps.size; a++)
+                    {
+                        if(menu == "Mystery Box Normal Weapons" && IsSubStr(weaps[a].name, "upgraded"))
+                            continue;
+
+                        if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
+                        {
+                            strng = ((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name);
+
+                            if(!IsInArray(arr, strng))
+                            {
+                                arr[arr.size] = strng;
+                                self addOptBool(IsWeaponInBox(weaps[a]), strng, &SetBoxWeaponState, weaps[a]);
+                            }
+                        }
+                    }
+                }
+
+                if(menu == "Mystery Box Normal Weapons")
+                {
+                    equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
+                    keys = GetArrayKeys(equipment);
+
+                    self addOptBool(IsWeaponInBox(GetWeapon("minigun")), "Death Machine", &SetBoxWeaponState, GetWeapon("minigun"));
+                    self addOptBool(IsWeaponInBox(GetWeapon("defaultweapon")), "Default Weapon", &SetBoxWeaponState, GetWeapon("defaultweapon"));
+
+                    if(IsDefined(keys) && keys.size)
+                    {
+                        foreach(index, weapon in GetArrayKeys(level.zombie_weapons))
+                        {
+                            if(isInArray(equipment, weapon))
+                                self addOptBool(IsWeaponInBox(weapon), weapon.displayname, &SetBoxWeaponState, weapon);
+                        }
+                    }
+                }
+            break;
+        
+        case "Joker Model":
+            self addMenu(menu);
+                self addOptBool((level.chest_joker_model == level.saved_jokerModel), "Reset", &SetBoxJokerModel, level.saved_jokerModel);
+                self addOpt("");
+
+                for(a = 0; a < level.menu_models.size; a++)
+                    self addOptBool((level.chest_joker_model == level.menu_models[a]), CleanString(level.menu_models[a]), &SetBoxJokerModel, level.menu_models[a]);
+            break;
+        
+        case "Zombie Craftables":
+            craftables = GetArrayKeys(level.zombie_include_craftables);
+
+            self addMenu("Craftables");
+
+                if(!IsAllCraftablesCollected())
+                {
+                    self addOpt("Collect All", &CollectAllCraftables);
+                    self addOpt("");
+                }
+
+                for(a = 0; a < craftables.size; a++)
+                {
+                    if(IsCraftableCollected(craftables[a]) || craftables[a] == "open_table" || IsSubStr(craftables[a], "ritual_") || IsSubStr(craftables[a], "wafflesniper"))
+                        continue;
+                    
+                    self addOpt(CleanString(craftables[a]), &newMenu, craftables[a]);
+                }
+            break;
+        
+        case "Zombie Traps":
+            self addMenu(menu);
+
+                if(IsDefined(level.menu_traps) && level.menu_traps.size)
+                {
+                    self addOpt("Activate All Traps", &ActivateAllZombieTraps);
+
+                    for(a = 0; a < level.menu_traps.size; a++)
+                    {
+                        if(IsDefined(level.menu_traps[a]))
+                            self addOpt((IsDefined(level.menu_traps[a].prefabname) ? CleanString(level.menu_traps[a].prefabname) : "Trap " + (a + 1)), &ActivateZombieTrap, a);
+                    }
+                }
+            break;
+        
+        case "Change Map":
+            mapNames = Array("zm_zod", "zm_factory", "zm_castle", "zm_island", "zm_stalingrad", "zm_genesis", "zm_prototype", "zm_asylum", "zm_sumpf", "zm_theater", "zm_cosmodrome", "zm_temple", "zm_moon", "zm_tomb");
+
+            self addMenu(menu);
+
+                for(a = 0; a < mapNames.size; a++)
+                    self addOptBool((level.script == mapNames[a]), ReturnMapName(mapNames[a]), &ServerChangeMap, mapNames[a]);
+            break;
+    }
+}
+
+function SuperJump()
+{
+    level.SuperJump = BoolVar(level.SuperJump);
+    SetJumpHeight((Is_True(level.SuperJump) ? 1023 : 39));
+}
+
+function LowGravity()
+{
+    SetDvar("bg_gravity", ((GetDvarInt("bg_gravity") == level.BgGravity) ? 200 : level.BgGravity));
+}
+
+function SuperSpeed()
+{
+    SetDvar("g_speed", ((GetDvarString("g_speed") == level.GSpeed) ? "500" : level.GSpeed));
+}
+
+function ServerSetTimeScale(timescale)
+{
+    if(GetDvarFloat("timescale") == timescale)
+        return;
+    
+    SetDvar("timescale", timescale);
+}
+
+function ChangeRoundValidation()
+{
+	if(!level flag::get("spawn_zombies"))
+		return false;
+
+	zombies = GetAITeamArray(level.zombie_team);
+
+	if(!IsDefined(zombies) || zombies.size < 1)
+		return false;
+
+	if(IsDefined(level.var_35efa94c))
+	{
+		if(![[ level.var_35efa94c ]]())
+			return false;
+	}
+
+	if(Is_True(level.var_dfd95560))
+		return false;
+
+	return true;
+}
+
+function SetRound(round = 1)
+{
+    if(!ChangeRoundValidation())
+        return self iPrintlnBold("^1ERROR: ^7You Can't Change The Round Right Now");
+    
+    if(Is_True(level.var_dfd95560))
+        return self iPrintlnBold("^1ERROR: ^7The Round Is Already Being Changed");
+    
+    if(IsString(round))
+    {
+        if(round == "Previous")
+            round = level.round_number - 1;
+        else
+            round = level.round_number + 1;
+    }
+
+    level.var_dfd95560 = true;
+    round--;
+
+    if(round >= 255 || round <= 0) round = ((round >= 255) ? 254 : 0);
+    
+	level.zombie_total = 0;
+	zombie_utility::ai_calculate_health(round);
+
+	level.round_number = (round - 1);
+    world.roundnumber = (round ^ 115);
+    SetRoundsPlayed(round);
+
+	level notify("kill_round");
+	PlaySoundAtPosition("zmb_bgb_round_robbin", (0, 0, 0));
+	wait 0.1;
+
+	zombies = GetAITeamArray(level.zombie_team);
+    
+	if(IsDefined(zombies))
+	{
+		e_last = undefined;
+
+		foreach(zombie in zombies)
+		{
+			if(IsDefined(zombie))
+				e_last = zombie;
+		}
+
+		if(IsDefined(e_last))
+		{
+			level.last_ai_origin = e_last.origin;
+			level notify("last_ai_down", e_last);
+		}
+	}
+
+	util::wait_network_frame();
+
+	if(IsDefined(zombies))
+	{
+		foreach(zombie in zombies)
+		{
+			if(!IsDefined(zombie))
+				continue;
+
+			zombie DoDamage(zombie.health + 666, zombie.origin);
+		}
+	}
+    
+	level.var_dfd95560 = undefined;
+}
+
+function AntiQuit()
+{
+    level.AntiQuit = BoolVar(level.AntiQuit);
+    SetMatchFlag("disableIngameMenu", Is_True(level.AntiQuit));
+}
+
+function AutoRevive()
+{
+    level endon("game_ended");
+
+    level.AutoRevive = BoolVar(level.AutoRevive);
+
+    while(Is_True(level.AutoRevive))
+    {
+        foreach(player in level.players)
+        {
+            if(IsDefined(player) && player isDown())
+                player thread PlayerRevive(player);
+        }
+
+        wait 0.1;
+    }
+}
+
+function AutoRespawn()
+{
+    level endon("game_ended");
+    
+    level.AutoRespawn = BoolVar(level.AutoRespawn);
+    
+    while(Is_True(level.AutoRespawn))
+    {
+        foreach(player in level.players)
+        {
+            if(IsDefined(player) && !Is_Alive(player))
+                player thread ServerRespawnPlayer(player);
+        }
+
+        wait 0.1;
+    }
+}
+
+function ServerPauseWorld()
+{
+    if(!Is_True(level.bzm_worldPaused))
+    {
+        level.bzm_worldPaused = true;
+        level flag::set("world_is_paused");
+    }
+    else
+    {
+        level.bzm_worldPaused = false;
+        level flag::clear("world_is_paused");
+    }
+
+    SetPauseWorld(level.bzm_worldPaused);
+}
+
+function Newsbar()
+{
+    level.Newsbar = BoolVar(level.Newsbar);
+
+    if(Is_True(level.Newsbar))
+    {
+        level endon("EndNewsBar");
+
+        level.NewsbarBG = level createServerRectangle("CENTER", 320, 8, 1000, 18, (0, 0, 0), 1, 0.6, "white");
+        level.NewsbarBG.horzalign = "fullscreen";
+        level.NewsbarText = level createServerText("default", 1, 3, "", "CENTER", 320, -15, 1, (1, 1, 1));
+        
+        strings = Array("Welcome To ^1" + GetMenuName() + " ^7Developed By ^2CF4_99", "Your Host Today Is ^6" + CleanName(bot::get_host_player() getName()), "[{+speed_throw}] & [{+melee}] To Open ^1" + GetMenuName(), "YouTube.Com/^3CF4_99", "Discord.gg/^6apparitionbo3", "^5Enjoy Your Stay!");
+        
+        while(Is_True(level.Newsbar))
+        {
+            for(a = 0; a < strings.size; a++)
+            {
+                if(IsDefined(level.NewsbarText))
+                {
+                    level.NewsbarText SetTextString(strings[a]);
+                    level.NewsbarText hudMoveY(8, 0.55);
+                    level.NewsbarText ChangeFontscaleOverTime1(1.2, 0.75);
+                    wait 5;
+                }
+                
+                if(IsDefined(level.NewsbarText))
+                {
+                    level.NewsbarText ChangeFontscaleOverTime1(1, 0.3);
+                    wait 0.3;
+                }
+                
+                if(IsDefined(level.NewsbarText))
+                {
+                    level.NewsbarText thread hudMoveY(-15, 0.55);
+                    wait 0.55;
+                }
+            }
+        }
+    }
+    else
+    {
+        if(IsDefined(level.NewsbarBG))
+            level.NewsbarBG destroy();
+        
+        if(IsDefined(level.NewsbarText))
+            level.NewsbarText destroy();
+        
+        level notify("EndNewsBar");
+    }
+}
+
+function Doheart()
+{
+    level.Doheart = BoolVar(level.Doheart);
+    
+    if(Is_True(level.Doheart))
+    {
+        level thread SetDoheartText(level.DoheartSavedText, true);
+    }
+    else
+    {
+        if(IsDefined(level.DoheartText))
+            level.DoheartText destroy();
+    }
+}
+
+function SetDoheartText(text, refresh)
+{
+    if(level.DoheartSavedText == text && (!IsDefined(refresh) || !refresh))
+        return;
+    
+    level.DoheartSavedText = text;
+
+    if(!Is_True(level.Doheart) || !IsDefined(text))
+        return;
+    
+    if(IsDefined(level.DoheartText))
+        level.DoheartText destroy();
+
+    level.DoheartText = level createServerText("objective", 2, 1, "", "CENTER", 320, 27, 1, (1, 1, 1));
+    
+    switch(level.DoheartStyle)
+    {
+        case "Pulsing":
+            level thread PulsingText(level.DoheartSavedText, level.DoheartText);
+            break;
+        
+        case "Pulse Effect":
+            level thread PulseFXText(level.DoheartSavedText, level.DoheartText);
+            break;
+        
+        case "Type Writer":
+            level thread TypeWriterFXText(level.DoheartSavedText, level.DoheartText);
+            break;
+        
+        case "Moving":
+            level thread RandomPosText(level.DoheartSavedText, level.DoheartText);
+            break;
+        
+        case "Fade Effect":
+            level thread FadingTextEffect(level.DoheartSavedText, level.DoheartText);
+            break;
+        
+        default:
+            break;
+    }
+}
+
+function DoheartTextPass(strng)
+{
+    if(strng != "Custom")
+        self thread SetDoheartText(strng);
+    else
+        self Keyboard(&SetDoheartText);
+}
+
+function SetDoheartStyle(style)
+{
+    if(level.DoheartStyle == style)
+        return;
+    
+    level.DoheartStyle = style;
+
+    if(Is_True(level.Doheart) && IsDefined(level.DoheartSavedText))
+        level thread SetDoheartText(level.DoheartSavedText, true);
+}
+
+function LobbyTimer()
+{
+    level.LobbyTimer = BoolVar(level.LobbyTimer);
+
+    if(Is_True(level.LobbyTimer))
+    {
+        level endon("EndLobbyTimer");
+
+        foreach(player in level.players)
+        {
+            player.LobbyTimer = player OpenLUIMenu("HudElementTimer", true);
+
+            player SetLUIMenuData(player.LobbyTimer, "x", 25);
+            player SetLUIMenuData(player.LobbyTimer, "y", 600);
+            player SetLUIMenuData(player.LobbyTimer, "height", 28);
+            player SetLUIMenuData(player.LobbyTimer, "time", (GetTime() + ((level.LobbyTime * 60) * 1000)));
+        }
+
+        wait (level.LobbyTime * 60);
+
+        foreach(player in level.players)
+        {
+            if(IsDefined(player) && IsDefined(player.LobbyTimer))
+                player CloseLUIMenu(player.LobbyTimer);
+        }
+        
+        if(Is_True(level.AntiEndGame))
+            level AntiEndGame();
+        
+        level thread globallogic::forceend();
+    }
+    else
+    {
+        foreach(player in level.players)
+        {
+            if(IsDefined(player.LobbyTimer))
+                player CloseLUIMenu(player.LobbyTimer);
+        }
+
+        level notify("EndLobbyTimer");
+    }
+}
+
+function SetLobbyTimer(time)
+{
+    if(time <= 0)
+        return self iPrintln("^1ERROR: ^7Lobby Timer Must Be Greater Than 0");
+
+    level.LobbyTime = time;
+
+    if(Is_True(level.LobbyTimer))
+    {
+        for(a = 0; a < 2; a++)
+            LobbyTimer();
+    }
+}
+
+function DisableMysteryBox()
+{
+    level.DisableMysteryBox = BoolVar(level.DisableMysteryBox);
+
+    foreach(chest in level.chests)
+    {
+        if(!IsDefined(chest) || !IsDefined(chest.unitrigger_stub))
+            continue;
+        
+        if(Is_True(level.DisableMysteryBox))
+        {
+            if(IsDefined(chest.unitrigger_stub.prompt_and_visibility_func))
+                chest.savedFunction = chest.unitrigger_stub.prompt_and_visibility_func;
+            
+            chest.unitrigger_stub.prompt_and_visibility_func = &overrideChestFunction;
+        }
+        else
+        {
+            if(IsDefined(chest.savedFunction))
+                chest.unitrigger_stub.prompt_and_visibility_func = chest.savedFunction;
+        }
+    }
+}
+
+function overrideChestFunction(player)
+{
+    return false;
+}
+
+function SetBoxPrice(price)
+{
+    foreach(chest in level.chests)
+    {
+        chest.old_cost = price;
+        
+        if(!Is_True(level.zombie_vars["zombie_powerup_fire_sale_on"]))
+            chest.zombie_cost = price;
+    }
+}
+
+function BoxNeverMoves()
+{
+    if(AllBoxesActive())
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option While All Mystery Boxes Are Active");
+    
+    SetDvar("magic_chest_movable", ((GetDvarString("magic_chest_movable") == "1") ? "0" : "1"));
+}
+
+function ShowAllChests()
+{
+    if(Is_True(level.ShowAllChestsWaiting))
+        return;
+    level.ShowAllChestsWaiting = true;
+
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    if(!AllBoxesActive())
+    {
+        foreach(chest in level.chests)
+        {
+            if(chest.hidden)
+                chest thread zm_magicbox::show_chest();
+            
+            chest thread TriggerFix();
+            chest thread FirsaleFix();
+        }
+        
+        SetDvar("magic_chest_movable", "0");
+
+        while(!AllBoxesActive())
+            wait 0.1;
+        
+        self RefreshMenu(menu, curs);
+
+        if(Is_True(level.ShowAllChestsWaiting))
+            level.ShowAllChestsWaiting = BoolVar(level.ShowAllChestsWaiting);
+    }
+    else
+    {
+        foreach(chest in level.chests)
+        {
+            if(!chest.hidden && chest != level.chests[level.chest_index])
+            {
+                chest.was_temp = true;
+                chest zm_magicbox::hide_chest();
+            }
+            
+            chest notify("EndBoxFixes");
+        }
+        
+        SetDvar("magic_chest_movable", "1");
+
+        while(AllBoxesActive())
+            wait 0.1;
+        
+        self RefreshMenu(menu, curs);
+        
+        if(Is_True(level.ShowAllChestsWaiting))
+            level.ShowAllChestsWaiting = BoolVar(level.ShowAllChestsWaiting);
+    }
+}
+
+function TriggerFix()
+{
+    self endon("EndBoxFixes");
+
+    if(!IsDefined(self.zbarrier))
+        return;
+    
+    while(IsDefined(self))
+    {
+        self.zbarrier waittill("closed");
+        thread zm_unitrigger::register_static_unitrigger(self.unitrigger_stub, &zm_magicbox::magicbox_unitrigger_think);
+    }
+}
+
+function FirsaleFix()
+{
+    self endon("EndBoxFixes");
+    
+    while(IsDefined(self))
+    {
+        level waittill("fire_sale_off");
+        self.was_temp = undefined;
+    }
+}
+
+function AllBoxesActive()
+{
+    foreach(chest in level.chests)
+    {
+        if(Is_True(chest.hidden))
+            return false;
+    }
+    
+    return true;
+}
+
+function BoxForceJoker()
+{
+    if(AllBoxesActive())
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option While All Mystery Boxes Are Active");
+    
+    SetDvar("magic_chest_movable", "1");
+    level.chest_accessed = 999;
+    level.chest_moves = 0;
+
+    self RefreshMenu(self getCurrent(), self getCursor()); //Needs to refresh the menu since 'magic_chest_movable' is a dvar used as a bool option
+}
+
+function SetBoxJokerModel(model)
+{
+    level.chest_joker_model = model;
+}
+
+function SetBoxWeaponState(weapon)
+{
+    if(!IsDefined(level.custom_boxWeapons))
+        return;
+    
+    if(isInArray(level.custom_boxWeapons, weapon))
+        level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, weapon);
+    else
+        level.custom_boxWeapons[level.custom_boxWeapons.size] = weapon;
+    
+    level.CustomRandomWeaponWeights = &CustomBoxWeight;
+}
+
+function IsAllWeaponsInBox(upgraded = false)
+{
+    weaps = (upgraded ? GetArrayKeys(level.zombie_weapons_upgraded) : GetArrayKeys(level.zombie_weapons));
+    weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
+    
+    for(a = 0; a < weaps.size; a++)
+    {
+        if(IsInArray(weaponsVar, ToLower(CleanString((upgraded ? zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a])) : zm_utility::GetWeaponClassZM(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none" && !IsWeaponInBox(weaps[a]))
+            return false;
+    }
+    
+    if(!upgraded)
+    {
+        equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
+        equipmentCombined = GetArrayKeys(equipment);
+
+        if(!IsWeaponInBox(GetWeapon("minigun")) || !IsWeaponInBox(GetWeapon("defaultweapon")))
+            return false;
+
+        if(IsDefined(equipmentCombined) && equipmentCombined.size)
+        {
+            for(a = 0; a < weaps.size; a++)
+            {
+                if(isInArray(equipment, weaps[a]) && !IsWeaponInBox(weaps[a]))
+                    return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+function EnableAllWeaponsInBox(upgraded = false)
+{
+    weaps = (upgraded ? GetArrayKeys(level.zombie_weapons_upgraded) : GetArrayKeys(level.zombie_weapons));
+
+    if(IsAllWeaponsInBox(upgraded))
+    {
+        if(isInArray(level.custom_boxWeapons, GetWeapon("minigun")))
+            level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, GetWeapon("minigun"));
+        
+        if(isInArray(level.custom_boxWeapons, GetWeapon("defaultweapon")))
+            level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, GetWeapon("defaultweapon"));
+        
+        for(a = 0; a < weaps.size; a++)
+        {
+            if(isInArray(level.custom_boxWeapons, weaps[a]))
+                level.custom_boxWeapons = ArrayRemove(level.custom_boxWeapons, weaps[a]);
+        }
+    }
+    else
+    {
+        weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
+        
+        for(a = 0; a < weaps.size; a++)
+        {
+            if(IsInArray(weaponsVar, ToLower(CleanString((upgraded ? zm_utility::GetWeaponClassZM(zm_weapons::get_base_weapon(weaps[a])) : zm_utility::GetWeaponClassZM(weaps[a]))))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none" && !IsWeaponInBox(weaps[a]))
+                level.custom_boxWeapons[level.custom_boxWeapons.size] = weaps[a];
+        }
+        
+        if(!upgraded)
+        {
+            equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
+            keys = GetArrayKeys(equipment);
+
+            if(!IsWeaponInBox(GetWeapon("minigun")))
+                level.custom_boxWeapons[level.custom_boxWeapons.size] = GetWeapon("minigun");
+            
+            if(!IsWeaponInBox(GetWeapon("defaultweapon")))
+                level.custom_boxWeapons[level.custom_boxWeapons.size] = GetWeapon("defaultweapon");
+
+            if(IsDefined(keys) && keys.size)
+            {
+                for(a = 0; a < weaps.size; a++)
+                {
+                    if(isInArray(equipment, weaps[a]) && !IsWeaponInBox(weaps[a]))
+                        level.custom_boxWeapons[level.custom_boxWeapons.size] = weaps[a];
+                }
+            }
+        }
+    }
+
+    level.CustomRandomWeaponWeights = &CustomBoxWeight;
+}
+
+function IsWeaponInBox(weapon)
+{
+    if(!IsDefined(level.custom_boxWeapons))
+        return false;
+    
+    return isInArray(level.custom_boxWeapons, weapon);
+}
+
+function CustomBoxWeight(keys)
+{
+    return array::randomize(level.custom_boxWeapons);
+}
+
+function OpenAllDoors()
+{
+    if(IsAllDoorsOpen())
+        return;
+    
+    curs = self getCursor();
+    menu = self getCurrent();
+    
+    SetDvar("zombie_unlock_all", 1);
+    types = Array("zombie_door", "zombie_airlock_buy", "zombie_debris");
+
+    for(i = 0; i < 2; i++) //Runs twice to ensure all doors open
+    {
+        for(a = 0; a < types.size; a++)
+        {
+            doors = GetEntArray(types[a], "targetname");
+
+            if(!IsDefined(doors))
+                continue;
+
+            for(b = 0; b < doors.size; b++)
+            {
+                if(!IsDefined(doors[b]) || types[a] == "zombie_door" && doors[b] IsDoorOpen(types[a]))
+                    continue;
+                
+                if(types[a] == "zombie_debris")
+                {
+                    doors[b] notify("trigger", self, 1);
+                }
+                else
+                {
+                    doors[b] notify("trigger");
+
+                    if(types[a] == "zombie_door")
+                    {
+                        if(doors[b].script_noteworthy == "electric_door" || doors[b].script_noteworthy == "electric_buyable_door" || doors[b].script_noteworthy == "local_electric_door")
+                        {
+                            if(doors[b].script_noteworthy == "local_electric_door")
+                                doors[b] notify("local_power_on");
+                            else
+                                doors[b] notify("power_on");
+                            
+                            doors[b].power_on = true;
+                        }
+                    }
+                }
+
+                wait 0.05;
+            }
+        }
+
+        if(IsAllDoorsOpen())
+            break;
+
+        wait 1;
+    }
+
+    level.local_doors_stay_open = 1;
+    level.power_local_doors_globally = 1;
+    wait 0.5;
+
+    level notify("open_sesame");
+    self RefreshMenu(menu, curs);
+
+    wait 1;
+    SetDvar("zombie_unlock_all", 0);
+}
+
+function IsAllDoorsOpen()
+{
+    if(Is_True(level.MoonDoors))
+        return true;
+    
+    types = Array("zombie_door", "zombie_airlock_buy", "zombie_debris");
+
+    for(a = 0; a < types.size; a++)
+    {
+        doors = GetEntArray(types[a], "targetname");
+
+        if(IsDefined(doors) && doors.size)
+        {
+            for(b = 0; b < doors.size; b++)
+            {
+                if(IsDefined(doors[b]))
+                {
+                    if(!doors[b] IsDoorOpen(types[a]))
+                        return false;
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+
+function IsDoorOpen(type)
+{
+    if(type == "zombie_door")
+    {
+        if(!Is_True(self.has_been_opened))
+            return false;
+    }
+    else
+    {
+        if(IsDefined(self.script_flag))
+        {
+            tokens = StrTok(self.script_flag, ",");
+
+            for(a = 0; a < tokens.size; a++)
+            {
+                if(!level flag::get(tokens[a]))
+                    return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+function SetZombieBarrierState(state)
+{
+    switch(state)
+    {
+        case "Repair All":
+            windows = struct::get_array("exterior_goal", "targetname");
+
+            for(a = 0; a < windows.size; a++)
+            {
+                if(zm_utility::all_chunks_intact(windows[a], windows[a].barrier_chunks))
+                    continue;
+
+                while(!zm_utility::all_chunks_intact(windows[a], windows[a].barrier_chunks))
+                {
+                    chunk = zm_utility::get_random_destroyed_chunk(windows[a], windows[a].barrier_chunks);
+
+                    if(!IsDefined(chunk))
+                        break;
+
+                    windows[a] thread zm_blockers::replace_chunk(windows[a], chunk, undefined, zm_powerups::is_carpenter_boards_upgraded(), 1);
+
+                    if(IsDefined(windows[a].clip))
+                    {
+                        windows[a].clip TriggerEnable(1);
+                        windows[a].clip DisconnectPaths();
+                    }
+                    else
+                    {
+                        zm_blockers::blocker_disconnect_paths(windows[a].neg_start, windows[a].neg_end);
+                    }
+                }
+            }
+            break;
+        
+        case "Break All":
+            zm_blockers::open_all_zbarriers();
+            break;
+        
+        default:
+            break;
+    }
+}
+
+function SpawnBot()
+{
+    bot = AddTestClient();
+
+    if(!IsDefined(bot))
+        return self iPrintlnBold("^1ERROR: ^7Couldn't Spawn Bot");
+
+    bot.pers["isBot"] = 1;
+    wait 0.5;
+    
+    if(bot.sessionstate == "spectator")
+        ServerRespawnPlayer(bot);
+}
+
+function CollectAllCraftables()
+{
+    menu = self getCurrent();
+    curs = self getCursor();
+    
+    keys = GetArrayKeys(level.zombie_include_craftables);
+
+    foreach(key in keys)
+    {
+        if(IsCraftableCollected(key) || key == "open_table" || IsSubStr(key, "ritual_") || IsSubStr(key, "wafflesniper"))
+            continue;
+        
+        foreach(part in level.zombie_include_craftables[key].a_piecestubs)
+        {
+            if(IsDefined(part.pieceSpawn))
+                self zm_craftables::player_take_piece(part.pieceSpawn);
+        }
+    }
+    
+    wait 0.05;
+    self RefreshMenu(menu, curs);
+}
+
+function CollectCraftableParts(craftable)
+{
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
+    {
+        if(IsDefined(part.pieceSpawn))
+            self zm_craftables::player_take_piece(part.pieceSpawn);
+    }
+    
+    wait 0.05;
+    self RefreshMenu(menu, curs);
+}
+
+function CollectCraftablePart(part)
+{
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    if(IsDefined(part.pieceSpawn))
+        self zm_craftables::player_take_piece(part.pieceSpawn);
+    
+    wait 0.05;
+    self RefreshMenu(menu, curs);
+}
+
+function IsCraftableCollected(craftable)
+{
+    if(craftable == "open_table" || IsSubStr(craftable, "ritual_") || IsSubStr(craftable, "wafflesniper"))
+        return true;
+    
+    foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
+    {
+        if(IsDefined(part.pieceSpawn.model))
+            return false;
+    }
+    
+    return true;
+}
+
+function IsPartCollected(part)
+{
+    if(IsDefined(part.pieceSpawn.model))
+        return false;
+    
+    return true;
+}
+
+function IsAllCraftablesCollected()
+{
+    craftables = GetArrayKeys(level.zombie_include_craftables);
+
+    for(a = 0; a < craftables.size; a++)
+    {
+        if(IsDefined(craftables[a]) && !IsSubStr(craftables[a], "ritual_") && !IsSubStr(craftables[a], "wafflesniper") && craftables[a] != "open_table" && !IsCraftableCollected(craftables[a]))
+            return false;
+    }
+    
+    return true;
+}
+
+function ServerChangeMap(map)
+{
+    if(!MapExists(map))
+        return self iPrintlnBold("Map Doesn't Exist");
+    
+    if(level.script == map)
+        return;
+    
+    StopAllMusic();
+    Map(map);
+}
+
+function ServerRestartGame(type = "Full")
+{
+    StopAllMusic();
+
+    if(type == "Full")
+    {
+        mapNames = Array("zm_zod", "zm_factory", "zm_castle", "zm_island", "zm_stalingrad", "zm_genesis", "zm_prototype", "zm_asylum", "zm_sumpf", "zm_theater", "zm_cosmodrome", "zm_temple", "zm_moon", "zm_tomb");
+
+        if(isInArray(mapNames, level.script))
+            Map(level.script);
+        else
+            MissionFailed();
+    }
+    else
+    {
+        Map_Restart(false);
+    }
+}
+
+function ServerEndGame()
+{
+    if(Is_True(level.AntiEndGame))
+        level AntiEndGame();
+    
+    StopAllMusic();
+    level thread globallogic::forceend();
+}
+
+// ============================================================
+// Functions/Spawnables/drop_tower.gsc
+// ============================================================
+
+function SpawnDropTower()
+{
+    if(Is_True(level.spawnable["Drop Tower_Spawned"]))
+        return false;
+
+    model = GetSpawnableBaseModel();
+    seatModel = (isInArray(level.menu_models, "test_sphere_silver") ? "test_sphere_silver" : "defaultactor");
+    origin = self TraceBullet();
+
+    base = [];
+    towerSeats = [];
+
+    towerSeatAttach = SpawnScriptModel(origin + (0, 0, 15), "tag_origin");
+
+    if(!IsDefined(towerSeatAttach))
+        return false;
+    
+    towerSeatAttach SpawnableArray("Drop Tower");
+
+    for(a = 0; a < 30; a++)
+    {
+        for(b = 0; b < 10; b++)
+        {
+            base[base.size] = SpawnScriptModel(origin + (Cos(b * 36) * 27, Sin(b * 36) * 27, (a * 80)), model, (0, (36 * b), 0), 0.01);
+
+            if(!IsDefined(base[(base.size - 1)]))
+                return false;
+        }
+    }
+
+    array::thread_all(base, &SpawnableArray, "Drop Tower");
+    seatsCount = 8;
+
+    for(a = 0; a < seatsCount; a++)
+    {
+        towerSeats[towerSeats.size] = SpawnScriptModel(origin + (Cos(a * (360 / seatsCount)) * 75, Sin(a * (360 / seatsCount)) * 75, 5), seatModel, (0, ((360 / seatsCount) * a), 0), 0.01);
+
+        if(IsDefined(towerSeats[(towerSeats.size - 1)]) && seatModel != "defaultactor")
+            towerSeats[(towerSeats.size - 1)] SetScale(6);
+        
+        if(!IsDefined(towerSeats[(towerSeats.size - 1)]))
+            return false;
+    }
+
+    array::thread_all(towerSeats, &SpawnableArray, "Drop Tower");
+
+    if(IsDefined(towerSeatAttach))
+    {
+        foreach(seat in towerSeats)
+            seat LinkTo(towerSeatAttach);
+
+        towerSeatAttach thread startDropMovement();
+    }
+    else
+    {
+        return false;
+    }
+
+    array::thread_all(towerSeats, &SeatSystem, "Drop Tower");
+    return true;
+}
+
+function startDropMovement()
+{
+    self endon("death");
+    level endon("Drop Tower_Stop");
+
+    while(IsDefined(self))
+    {
+        wait 5;
+        self MoveTo(self.origin + (0, 0, 2385), 20);
+        self RotateYaw(360, 20);
+
+        self waittill("movedone");
+        Earthquake(0.4, 1, self.origin, 500);
+        wait 2;
+
+        for(a = 0; a < 5; a++)
+        {
+            Earthquake(0.3, 1, self.origin, 500);
+            wait 1;
+        }
+
+        self MoveTo(self.origin + (0, 0, -2385), 0.55);
+        self RotateYaw(-360, 0.55);
+
+        self waittill("movedone");
+        Earthquake(0.6, 1, self.origin, 500);
+        wait 5;
+    }
+}
+
+// ============================================================
+// Functions/Spawnables/merry_go_round.gsc
+// ============================================================
+
+function SpawnMerryGoRound()
+{
+    if(Is_True(level.spawnable["Merry Go Round_Spawned"]))
+        return false;
+
+    model = GetSpawnableBaseModel("vending_three_gun");
+    seatModel = (isInArray(level.menu_models, "test_sphere_silver") ? "test_sphere_silver" : "defaultactor");
+    origin = self TraceBullet();
+    level.MerryGoRoundSpeed = 10;
+
+    SeatsLinker = [];
+    base = [];
+    platforms = [];
+    seats = [];
+
+    MerryGoRoundLinker = SpawnScriptModel(origin + (0, 0, 15), "tag_origin", (0, 0, 0));
+
+    if(!IsDefined(MerryGoRoundLinker))
+        return false;
+
+    MerryGoRoundLinker SpawnableArray("Merry Go Round");
+
+    for(a = 0; a < 2; a++)
+    {
+        SeatsLinker[a] = SpawnScriptModel(origin + (0, 0, 15), "tag_origin");
+
+        if(!IsDefined(SeatsLinker[a]))
+            return false;
+    }
+
+    array::thread_all(SeatsLinker, &SpawnableArray, "Merry Go Round");
+
+    for(a = 0; a < 4; a++)
+    {
+        for(b = 0; b < 10; b++)
+        {
+            base[base.size] = SpawnScriptModel(origin + (Cos(b * 36) * 27, Sin(b * 36) * 27, ((a * 55) + 25)), model, (0, (36 * b), 0), 0.01);
+
+            if(!IsDefined(base[(base.size - 1)]))
+                return false;
+        }
+    }
+
+    array::thread_all(base, &SpawnableArray, "Merry Go Round");
+
+    for(a = 0; a < 2; a++)
+    {
+        for(b = 0; b < 12; b++)
+        {
+            platforms[platforms.size] = SpawnScriptModel(origin + (0, 0, (a * 250)), model, (0, (30 * b), 90), 0.01);
+
+            if(IsDefined(platforms[(platforms.size - 1)]))
+            {
+                platforms[(platforms.size - 1)] LinkTo(MerryGoRoundLinker);
+                platforms[(platforms.size - 1)] SetScale(2);
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    array::thread_all(platforms, &SpawnableArray, "Merry Go Round");
+
+    for(a = 0; a < platforms.size; a++)
+    {
+        if(IsDefined(platforms[a]))
+            platforms[a] LinkTo(MerryGoRoundLinker);
+        else
+            return false;
+    }
+
+    for(a = 0; a < 10; a++)
+    {
+        seats[seats.size] = SpawnScriptModel(origin + (Cos((a * 360) / 10) * 150, Sin((a * 360) / 10) * 150, 45), seatModel, (0, (36 * a), 0), 0.01);
+
+        if(IsDefined(seats[(seats.size - 1)]) && seatModel != "defaultactor")
+            seats[(seats.size - 1)] SetScale(6);
+        
+        if(!IsDefined(seats[(seats.size - 1)]))
+            return false;
+    }
+
+    array::thread_all(seats, &SpawnableArray, "Merry Go Round");
+
+    for(a = 0; a < seats.size; a++)
+    {
+        if(!IsDefined(seats[a]))
+            return false;
+
+        seats[a] LinkTo(SeatsLinker[(a % 2 ? 0 : 1)]);
+    }
+    
+    if(!IsDefined(MerryGoRoundLinker))
+        return false;
+    
+    MerryGoRoundLinker thread RotateMerryYaw();
+
+    array::thread_all(SeatsLinker, &RotateMerryYaw);
+    array::thread_all(seats, &SeatSystem, "Merry Go Round");
+
+    for(a = 0; a < SeatsLinker.size; a++)
+    {
+        if(IsDefined(SeatsLinker[a]))
+        {
+            SeatsLinker[a] thread SeatsMove(origin[2] + 45);
+            wait 0.6;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function RotateMerryYaw()
+{
+    level endon("Merry Go Round_Stop");
+
+    while(IsDefined(self))
+    {
+        self RotateYaw(360, level.MerryGoRoundSpeed);
+        wait level.MerryGoRoundSpeed;
+    }
+}
+
+function SetMerryGoRoundSpeed(speed)
+{
+    speeds = Array(0, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1);
+    level.MerryGoRoundSpeed = speeds[speed];
+
+    if(Is_True(level.spawnable["Merry Go Round_Spawned"]))
+        self iPrintlnBold("^1NOTE: ^7This Might Take A Few Seconds To Take Effect");
+}
+
+function SeatsMove(origin)
+{
+    self endon("death");
+    level endon("Merry Go Round_Stop");
+
+    while(IsDefined(self))
+    {
+        self MoveZ(((self.origin[2] > origin) ? -50 : 50), 0.65);
+        wait 0.6;
+    }
+}
+
+// ============================================================
+// Functions/Spawnables/skybase.gsc
+// ============================================================
+
+function SpawnSkybase()
+{
+    if(Is_True(level.spawnable["Skybase_Spawned"]))
+        return false;
+    
+    //These values control the size of the base
+    x = 10;
+    y = 5;
+
+    //DON'T CHANGE THESE VALUES
+    width = 51;
+    height = 90;
+
+    origin = GetSkybaseOriginForMap();
+    model = GetSpawnableBaseModel("vending_doubletap");
+    location = ((!IsVec(origin) || !IsDefined(level.SkybaseLocation)) ? "Custom" : level.SkybaseLocation);
+
+    if(location == "Custom")
+    {
+        self closeMenu1();
+
+        cancel = false;
+        distance = 650;
+        cfIndex = Int(Pow(2, RandomInt(3)));
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), distance), 0, self)["position"];
+
+        goalPos = SpawnScriptModel(trace, "tag_origin");
+        goalPos clientfield::set("powerup_fx", cfIndex);
+
+        if(!IsDefined(goalPos))
+            return false;
+
+        self.DisableMenuControls = true;
+        self SetMenuInstructions(Array("[{+attack}] - Increase Distance", "[{+speed_throw}] - Decrease Distance", "[{+activate}] - Confirm Location", "[{+melee}] - Cancel"));
+
+        preview = [];
+
+        for(a = 0; a < x; a++)
+        {
+            for(b = 0; b < y; b++)
+            {
+                preview[preview.size] = SpawnScriptModel(trace + ((a * width), (b * height), 0), "tag_origin", (0, 0, 0));
+
+                if(IsDefined(preview[(preview.size - 1)]))
+                {
+                    preview[(preview.size - 1)] clientfield::set("powerup_fx", cfIndex);
+                    preview[(preview.size - 1)] LinkTo(goalPos);
+                }
+                else
+                {
+                    return false;
+                }
+
+                wait 0.01;
+            }
+        }
+
+        while(1)
+        {
+            if(!IsDefined(goalPos))
+            {
+                cancel = true;
+                break;
+            }
+            
+            trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), distance), 0, self)["position"];
+            goalPos.origin = trace;
+
+            if(self AttackButtonPressed())
+            {
+                distance += 25;
+            }
+            else if(self AdsButtonPressed())
+            {
+                distance -= 25;
+            }
+            else if(self UseButtonPressed())
+            {
+                origin = trace;
+                break;
+            }
+            else if(self MeleeButtonPressed())
+            {
+                cancel = true;
+                break;
+            }
+
+            if(distance < 100)
+                distance = 100;
+            else if(distance > 2500)
+                distance = 2500;
+
+            wait 0.01;
+        }
+
+        if(IsDefined(goalPos))
+            goalPos Delete();
+        
+        if(IsDefined(preview) && preview.size)
+        {
+            for(a = 0; a < preview.size; a++)
+            {
+                if(IsDefined(preview[a]))
+                    preview[a] Delete();
+            }
+        }
+        
+        if(Is_True(self.DisableMenuControls))
+            self.DisableMenuControls = BoolVar(self.DisableMenuControls);
+        
+        self SetMenuInstructions();
+
+        if(Is_True(cancel))
+            return false;
+    }
+
+    if(!IsDefined(origin) || !IsVec(origin) || origin == (0, 0, 0))
+        return false;
+    
+    level.SkybaseOrigin = origin;
+    level.skybaseLinker = SpawnScriptModel(origin, "tag_origin");
+
+    if(!IsDefined(level.skybaseLinker))
+        return false;
+
+    floor = [];
+    roof = [];
+    walls = [];
+    corners = [];
+
+    for(a = 0; a < x; a++)
+    {
+        for(b = 0; b < y; b++)
+        {
+            floor[floor.size] = SpawnScriptModel(origin + ((a * width), (b * height), 0), model, (0, 0, 90), 0.01);
+
+            if(!IsDefined(floor[(floor.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                floor[(floor.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    array::thread_all(floor, &SpawnableArray, "Skybase");
+
+    for(a = 0; a < x; a++)
+    {
+        for(b = 0; b < y; b++)
+        {
+            roof[roof.size] = SpawnScriptModel(origin + ((a * width), (b * height), (height + 35)), model, (180, 0, 90), 0.01);
+
+            if(!IsDefined(roof[(roof.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                roof[(roof.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    array::thread_all(roof, &SpawnableArray, "Skybase");
+
+    for(a = 0; a < 2; a++)
+    {
+        for(b = 0; b < y; b++)
+        {
+            walls[walls.size] = SpawnScriptModel(origin + (-25 + ((width * x) * a) + (10 * a), (b * height), 19), model, (90 - (180 * a), 0, 90), 0.01);
+
+            if(!IsDefined(walls[(walls.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                walls[(walls.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    for(a = 0; a < 2; a++)
+    {
+        for(b = 0; b < (x - 4); b++)
+        {
+            walls[walls.size] = SpawnScriptModel(origin + (5 + width + (b * height), (height * -1) + ((height * y) * a), 19), model, (-90 + (180 * a), 0, 0 - (180 * a)), 0.01);
+
+            if(!IsDefined(walls[(walls.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                walls[(walls.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    array::thread_all(walls, &SpawnableArray, "Skybase");
+
+    for(a = 0; a < 2; a++)
+    {
+        for(b = 0; b < 2; b++)
+        {
+            corners[corners.size] = SpawnScriptModel(origin + (0 - (((25 * b) + (25 * a)) - ((50 * a) * b)), (height * -1) + (15 * b) + (((height * y) - 15) * a), 44), model, (0, 0 - ((b * 90) + (a * 90)), 0), 0.01);
+
+            if(!IsDefined(corners[(corners.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                corners[(corners.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    for(a = 0; a < 2; a++)
+    {
+        for(b = 0; b < 2; b++)
+        {
+            corners[corners.size] = SpawnScriptModel(origin + ((width * (x - 1)) + (((36 * b) + (36 * a)) - ((72 * a) * b)), (height * -1) + (15 * b) + (((height * y) - 15) * a), 44), model, (0, 0 + ((b * 90) + (a * 90)), 0), 0.01);
+
+            if(!IsDefined(corners[(corners.size - 1)]))
+                return false;
+            
+            if(IsDefined(level.skybaseLinker))
+                corners[(corners.size - 1)] LinkTo(level.skybaseLinker);
+        }
+    }
+
+    array::thread_all(corners, &SpawnableArray, "Skybase");
+
+    //SpawnProp(origin = (0, 0, 0), model = "defaultactor", angles = (0, 0, 0), bounce = true, glow = true, triggerFunction, hintString)
+    bottle = SpawnProp(origin + (10, (55 * (y + 1)), 55), GetSpawnablePerkBottle(), (0, 0, 0), true, true, &SkybasePerkTrigger, "Press ^3[{+activate}]^7 For All Perks");
+
+    if(!IsDefined(bottle))
+        return false;
+
+    level.skybaseProps = Array(bottle);
+    array::thread_all(level.skybaseProps, &SpawnableArray, "Skybase");
+    
+
+    return true;
+}
+
+function SkybasePerkTrigger()
+{
+    MenuPerks = [];
+    perks = GetArrayKeys(level._custom_perks);
+
+    for(a = 0; a < perks.size; a++)
+        array::add(MenuPerks, perks[a], 0);
+    
+    if(IsDefined(self.perks_active) && self.perks_active.size == MenuPerks.size)
+        return;
+    
+    PlayerAllPerks(self);
+}
+
+function SpawnSkybaseTeleporter()
+{
+    if(Is_True(level.spawnable["Skybase_Building"]) || Is_True(level.spawnable["Skybase_Dismantle"]) || Is_True(level.spawnable["Skybase_Deleted"]) || !Is_True(level.spawnable["Skybase_Spawned"]))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use This Option Right Now");
+
+    if(!IsDefined(level.SkybaseTeleporters) || !level.SkybaseTeleporters.size)
+    {
+        traceSurface = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
+
+        if(traceSurface == "none" || traceSurface == "default")
+            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+
+        crosshairs = self TraceBullet();
+        level.SkybaseTeleporters = [];
+
+        for(a = 0; a < 2; a++) level.SkybaseTeleporters[level.SkybaseTeleporters.size] = SpawnTeleporter("Spawn", (a ? (level.SkybaseOrigin + (20, -45, 45)) : (crosshairs + (0, 0, 45))), !a, true);
+    }
+    else
+    {
+        foreach(teleporter in level.SkybaseTeleporters)
+            teleporter Delete();
+
+        level.SkybaseTeleporters = undefined;
+    }
+}
+
+function SkybaseLocation(location)
+{
+    level.SkybaseLocation = location;
+}
+
+function GetSkybaseOriginForMap()
+{
+    map = ReturnMapName();
+
+    switch(map)
+    {
+        case "Shadows Of Evil":
+            return (2546, -5263, 450);
+
+        case "The Giant":
+            return (-230, -515, 522);
+        
+        case "Der Eisendrache":
+            return (-754, 342, 877);
+
+        case "Zetsubou No Shima":
+            return (3407, 1277, -475);
+        
+        case "Gorod Krovi":
+            return (-218, -803, 216);
+
+        case "Revelations":
+            return (271, -864, -272);
+
+        case "Nacht Der Untoten":
+            return (1182, 572, 296);
+
+        case "Verruckt":
+            return (16, -69, 308);
+
+        case "Shi No Numa":
+            return (10165, 974, -268);
+
+        case "Kino Der Toten":
+            return (-360, 328, 239);
+
+        case "Ascension":
+            return (-2461, 1682, 361);
+
+        case "Shangri-La":
+            return (-2401, -1066, -162);
+
+        case "Moon":
+            return (21835, -37689, -529);
+
+        case "Origins":
+            return (294.5, 1213, 557);
+        
+        default:
+            return "invalid";
+    }
+}
+
+function MoveSkybase(amount = 0, axis = "X")
+{
+    if(Is_True(level.spawnable["Skybase_Building"]))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Move The Skybase While It's Being Built");
+    
+    if(!Is_True(level.spawnable["Skybase_Spawned"]))
+        return self iPrintlnBold("^1ERROR: ^7The Skybase Hasn't Been Spawned Yet");
+    
+    if(Is_True(level.spawnable["Skybase_Dismantle"]) || Is_True(level.spawnable["Skybase_Deleted"]))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Move The Skybase Right Now");
+    
+    if(!IsDefined(level.skybaseLinker))
+        return self iPrintlnBold("^1ERROR: ^7Failed To Move Skybase");
+    
+    switch(axis)
+    {
+        case "X":
+            level.skybaseLinker.origin += (amount, 0, 0);
+
+            if(IsDefined(level.SkybaseOrigin))
+                level.SkybaseOrigin += (amount, 0, 0);
+
+            for(a = 0; a < level.skybaseProps.size; a++)
+            {
+                if(IsDefined(level.skybaseProps[a]))
+                {
+                    level.skybaseProps[a].origin += (amount, 0, 0);
+
+                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
+                        level.skybaseProps[a].original_origin += (amount, 0, 0);
+                }
+            }
+            break;
+        
+        case "Y":
+            level.skybaseLinker.origin += (0, amount, 0);
+
+            if(IsDefined(level.SkybaseOrigin))
+                level.SkybaseOrigin += (0, amount, 0);
+
+            for(a = 0; a < level.skybaseProps.size; a++)
+            {
+                if(IsDefined(level.skybaseProps[a]))
+                {
+                    level.skybaseProps[a].origin += (0, amount, 0);
+
+                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
+                        level.skybaseProps[a].original_origin += (0, amount, 0);
+                }
+            }
+            break;
+        
+        case "Z":
+            level.skybaseLinker.origin += (0, 0, amount);
+
+            if(IsDefined(level.SkybaseOrigin))
+                level.SkybaseOrigin += (0, 0, amount);
+
+            for(a = 0; a < level.skybaseProps.size; a++)
+            {
+                if(IsDefined(level.skybaseProps[a]))
+                {
+                    level.skybaseProps[a].origin += (0, 0, amount);
+
+                    if(IsDefined(level.skybaseProps[a].original_origin) && IsVec(level.skybaseProps[a].original_origin))
+                        level.skybaseProps[a].original_origin += (0, 0, amount);
+                }
+            }
+            break;
+        
+        default:
+            break;
+    }
+}
+
+// ============================================================
+// Functions/Spawnables/spawnable_system.gsc
+// ============================================================
+
+function PopulateSpawnables(menu)
+{
+    switch(menu)
+    {
+        case "Spawnables":
+            if(!IsDefined(level.spawnable))
+                level.spawnable = [];
+
+            self addMenu(menu);
+                self addOpt("Rain Options", &newMenu, "Rain Options");
+                self addOpt("Small Spawnables", &newMenu, "Small Spawnables");
+                self addOpt("Large Spawnables", &newMenu, "Large Spawnables");
+            break;
+        
+        case "Rain Options":
+            self addMenu(menu);
+                self addOpt("Disable", &DisableLobbyRain);
+                self addOpt("Models", &newMenu, "Rain Models");
+                self addOpt("Effects", &newMenu, "Rain Effects");
+                self addOpt("Projectiles", &newMenu, "Rain Projectiles");
+
+                if(IsDefined(level.zombie_include_powerups) && level.zombie_include_powerups.size)
+                    self addOptBool(level.RainPowerups, "Rain Power-Ups", &RainPowerups);
+            break;
+        
+        case "Rain Models":
+            self addMenu("Models");
+
+                if(IsDefined(level.menu_models) && level.menu_models.size)
+                {
+                    for(a = 0; a < level.menu_models.size; a++)
+                    {
+                        isCurrent = IsDefined(level.LobbyRainType) && level.LobbyRainType == "Model" && IsDefined(level.LobbyRain) && level.LobbyRain == level.menu_models[a];
+                        self addOptBool(isCurrent, CleanString(level.menu_models[a]), &LobbyRain, "Model", level.menu_models[a]);
+                    }
+                }
+            break;
+        
+        case "Rain Effects":
+            self addMenu("Effects");
+
+                for(a = 0; a < level.menuFX.size; a++)
+                {
+                    isCurrent = IsDefined(level.LobbyRainType) && level.LobbyRainType == "FX" && IsDefined(level.LobbyRain) && level.LobbyRain == level.menuFX[a];
+                    self addOptBool(isCurrent, CleanString(level.menuFX[a]), &LobbyRain, "FX", level.menuFX[a]);
+                }
+            break;
+        
+        case "Rain Projectiles":
+            self addMenu("Projectiles");
+
+                if(!IsVerkoMap())
+                {
+                    arr = [];
+                    weaponsVar = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
+                    weaps = GetArrayKeys(level.zombie_weapons);
+
+                    if(IsDefined(weaps) && weaps.size)
+                    {
+                        for(a = 0; a < weaps.size; a++)
+                        {
+                            if(IsInArray(weaponsVar, ToLower(CleanString(zm_utility::GetWeaponClassZM(weaps[a])))) && !weaps[a].isgrenadeweapon && !IsSubStr(weaps[a].name, "knife") && weaps[a].name != "none")
+                            {
+                                strn = ((MakeLocalizedString(weaps[a].displayname) != "") ? weaps[a].displayname : weaps[a].name);
+                                
+                                if(!IsInArray(arr, strn))
+                                {
+                                    arr[arr.size] = strn;
+                                    isCurrent = IsDefined(level.LobbyRainType) && level.LobbyRainType == "Projectile" && IsDefined(level.LobbyRain) && level.LobbyRain == weaps[a];
+
+                                    self addOptBool(isCurrent, strn, &LobbyRain, "Projectile", weaps[a]);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    for(a = 0; a < level.var_21b77150.size; a++)
+                        self addOpt(level.var_7df703ba[a], &LobbyRain, "Projectile", GetWeapon(level.var_21b77150[a]));
+                }
+            break;
+        
+        case "Small Spawnables":
+            self addMenu(menu);
+                self addOptBool(level.TornadoSpawned, "Tornado", &Tornado);
+                self addOptIncSlider("Mexican Wave", &MexicanWave, 2, 2, 15, 1);
+                self addOptIncSlider("Spiral Staircase", &SpiralStaircase, 5, 5, 50, 1);
+                self addOptSlider("Teleporter", &SpawnTeleporter, Array("Spawn", "Delete All"));
+            break;
+        
+        case "Large Spawnables":
+            self addMenu(menu);
+                self addOpt("Skybase", &newMenu, "Skybase");
+                self addOptSlider("Drop Tower", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Drop Tower", &SpawnDropTower);
+                self addOptSlider("Merry Go Round", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Merry Go Round", &SpawnMerryGoRound);
+
+                if(IsDefined(level.spawnable["Merry Go Round_Spawned"]))
+                    self addOptIncSlider("Merry Go Round Speed", &SetMerryGoRoundSpeed, 1, 1, 10, 1);
+            break;
+        
+        case "Skybase":
+            self addMenu(menu);
+
+                /*
+                This was used for getting the pre-set locations for the skybase
+                I left it here and commented it out in case anyone wants to make changes to the locations
+                The origin doesn't auto-update in the menu, so you will need to exit the skybase submenu and reenter it to see the new origin if/when changed
+                
+                origin = IsDefined(level.SkybaseOrigin) ? level.SkybaseOrigin : (0, 0, 0);
+                self addOpt("Origin: " + origin);
+                */
+
+                baseOrigin = GetSkybaseOriginForMap();
+                
+                if(!IsDefined(level.SkybaseLocation)) level.SkybaseLocation = (IsVec(baseOrigin) ? "Pre-Set" : "Custom");
+
+                self addOptSlider("Skybase", &SpawnSystem, Array("Spawn", "Dismantle", "Delete"), "Skybase", &SpawnSkybase);
+                self addOptSlider("Location", &SkybaseLocation, (IsVec(baseOrigin) ? Array("Pre-Set", "Custom") : Array("Custom")));
+                self addOptBool((IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size), "Spawn Skybase Teleporter", &SpawnSkybaseTeleporter);
+                
+                self addOpt("");
+                self addOptIncSlider("Move X", &MoveSkybase, -25, 0, 25, 1, "X");
+                self addOptIncSlider("Move Y", &MoveSkybase, -25, 0, 25, 1, "Y");
+                self addOptIncSlider("Move Z", &MoveSkybase, -25, 0, 25, 1, "Z");
+            break;
+    }
+}
+
+function SpawnSystem(action, type, func)
+{
+    checkModel = GetSpawnableBaseModel();
+
+    if(!IsDefined(checkModel))
+        return self iPrintlnBold("^1ERROR: ^7Couldn't Find A Valid Base Model For Spawnables");
+
+    if(!IsDefined(level.spawnable))
+        level.spawnable = [];
+
+    if(Is_True(level.spawnable[type + "_Building"]))
+        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Built");
+
+    if(Is_True(level.spawnable[type + "_Dismantle"]))
+        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Dismantled");
+
+    if(Is_True(level.spawnable[type + "_Deleted"]))
+        return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Is Being Deleted");
+
+    if(!Is_True(level.spawnable[type + "_Spawned"]) && type != "Skybase")
+    {
+        traceSurface = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
+
+        if(traceSurface == "none" || traceSurface == "default")
+            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+    }
+
+    if(action != "Spawn")
+    {
+        if(!Is_True(level.spawnable[type + "_Spawned"]))
+            return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Hasn't Been Spawned Yet");
+    }
+    else
+    {
+        if(IsDefined(level.spawnable["LargeSpawnable"]) && isLargeSpawnable(type))
+            return self iPrintlnBold("^1ERROR: ^7You Must Delete The " + level.spawnable["LargeSpawnable"] + " First");
+
+        if(Is_True(level.spawnable[type + "_Spawned"]))
+            return self iPrintlnBold("^1ERROR: ^7" + CleanString(type) + " Has Already Been Spawned");
+    }
+
+    if(IsDefined(level.SpawnableSystemBusy))
+        return self iPrintlnBold("^1ERROR: ^7The Spawnable System Is Currently Busy");
+
+    level.SpawnableSystemBusy = type;
+
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    if(!IsDefined(level.SpawnableArray))
+        level.SpawnableArray = [];
+    
+    if(!IsDefined(level.SpawnableArray[type]))
+        level.SpawnableArray[type] = [];
+
+    switch(action)
+    {
+        case "Spawn":
+            if(isLargeSpawnable(type))
+                level.spawnable["LargeSpawnable"] = type;
+
+            level.spawnable[type + "_Building"] = true;
+
+            if(IsDefined(func) && IsFunctionPtr(func))
+                built = self [[ func ]]();
+            
+            if(Is_True(level.spawnable[type + "_Building"]))
+                level.spawnable[type + "_Building"] = BoolVar(level.spawnable[type + "_Building"]);
+            
+            if(!IsDefined(func) || !IsFunctionPtr(func) || !Is_True(built))
+            {
+                DeleteSpawnable(type, "Delete");
+                self iPrintlnBold("^1ERROR: ^7Failed To Spawn " + type);
+            }
+            else
+            {
+                level.spawnable[type + "_Spawned"] = true;
+            }
+
+            break;
+
+        case "Delete":
+            DeleteSpawnable(type, action);
+            break;
+
+        case "Dismantle":
+            if(IsDefined(level.SpawnableArray[type]) && level.SpawnableArray[type].size)
+            {
+                for(a = 0; a < level.SpawnableArray[type].size; a++)
+                {
+                    if(!IsDefined(level.SpawnableArray[type][a]))
+                        continue;
+
+                    if(Is_True(level.SpawnableArray[type][a].propActivated))
+                        level.SpawnableArray[type][a].propActivated = false;
+                    
+                    level.SpawnableArray[type][a] NotSolid();
+                    level.SpawnableArray[type][a] Unlink();
+                    level.SpawnableArray[type][a] Launch(VectorScale(AnglesToForward(level.SpawnableArray[type][a].angles), RandomIntRange(-255, 255)));
+                }
+            }
+
+            if(type == "Skybase")
+            {
+                if(IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size)
+                {
+                    for(a = 0; a < level.SkybaseTeleporters.size; a++)
+                    {
+                        if(!IsDefined(level.SkybaseTeleporters[a]))
+                            continue;
+
+                        level.SkybaseTeleporters[a] Unlink();
+                        level.SkybaseTeleporters[a] Launch(VectorScale(AnglesToForward(level.SkybaseTeleporters[a].angles), RandomIntRange(-255, 255)));
+                    }
+                }
+            }
+
+            DeleteSpawnable(type, action);
+            break;
+
+        default:
+            break;
+    }
+
+    level.SpawnableSystemBusy = undefined;
+    RefreshMenu(menu, curs);
+}
+
+function DeleteSpawnable(spawn, type)
+{
+    level notify(spawn + "_Stop");
+
+    if(!IsDefined(level.spawnable))
+        level.spawnable = [];
+
+    if(!IsDefined(level.SpawnableArray))
+        level.SpawnableArray = [];
+    
+    if(!IsDefined(level.SpawnableArray[type]))
+        level.SpawnableArray[type] = [];
+
+    if(isLargeSpawnable(spawn))
+    {
+        foreach(player in level.players)
+        {
+            if(Is_True(player.OnSpawnable))
+                player StopRidingSpawnable(spawn);
+        }
+    }
+
+    level.spawnable[spawn + "_" + type] = true;
+
+    if(type == "Dismantle")
+        wait 5;
+
+    if(IsDefined(level.SpawnableArray) && IsDefined(level.SpawnableArray[spawn]) && level.SpawnableArray[spawn].size)
+    {
+        for(a = 0; a < level.SpawnableArray[spawn].size; a++)
+        {
+            if(IsDefined(level.SpawnableArray[spawn][a]))
+                level.SpawnableArray[spawn][a] Delete();
+        }
+    }
+
+    if(spawn == "Skybase")
+    {
+        if(IsDefined(level.SkybaseTeleporters) && level.SkybaseTeleporters.size)
+        {
+            for(a = 0; a < level.SkybaseTeleporters.size; a++)
+            {
+                if(!IsDefined(level.SkybaseTeleporters[a]))
+                    continue;
+
+                level.SkybaseTeleporters[a] Delete();
+            }
+
+            level.SkybaseTeleporters = undefined;
+        }
+    }
+
+    //after delete
+    level.SpawnableArray[spawn] = undefined;
+
+    if(Is_True(level.spawnable[spawn + "_" + type]))
+        level.spawnable[spawn + "_" + type] = BoolVar(level.spawnable[spawn + "_" + type]);
+
+    if(Is_True(level.spawnable[spawn + "_Spawned"]))
+        level.spawnable[spawn + "_Spawned"] = BoolVar(level.spawnable[spawn + "_Spawned"]);
+
+    if(isLargeSpawnable(spawn))
+        level.spawnable["LargeSpawnable"] = undefined;
+}
+
+function isLargeSpawnable(type)
+{
+    spawns = Array("Skybase", "Merry Go Round", "Drop Tower");
+    return isInArray(spawns, type);
+}
+
+function SpawnableArray(spawn)
+{
+    if(!IsDefined(self) || !IsDefined(spawn))
+        return;
+
+    if(!IsDefined(level.SpawnableArray))
+        level.SpawnableArray = [];
+
+    if(!IsDefined(level.SpawnableArray[spawn]))
+        level.SpawnableArray[spawn] = [];
+
+    level.SpawnableArray[spawn][level.SpawnableArray[spawn].size] = self;
+}
+
+function SeatSystem(type)
+{
+    if(!IsDefined(type) || !IsDefined(self))
+        return;
+
+    level endon(type + "_Stop");
+
+    self MakeUsable();
+    self SetCursorHint("HINT_NOICON");
+    self SetHintString("Press [{+activate}] To Ride The " + type);
+
+    while(IsDefined(self))
+    {
+        self waittill("trigger", player);
+
+        if(IsDefined(self.Rider) && player == self.Rider)
+        {
+            player StopRidingSpawnable(type, self);
+            wait 1;
+
+            continue;
+        }
+
+        if(IsDefined(self.Rider) || Is_True(player.OnSpawnable) || player isPlayerLinked(self))
+            continue;
+
+        player.SpawnableSavedOrigin = player.origin;
+        player.SpawnableSavedAngles = player.angles;
+
+        switch(type)
+        {
+            case "Merry Go Round":
+                player PlayerLinkTo(self);
+                break;
+
+            case "Drop Tower":
+                player PlayerLinkToAbsolute(self);
+                break;
+
+            default:
+                player PlayerLinkTo(self);
+                break;
+        }
+
+        player.OnSpawnable = true;
+        self.Rider = player;
+
+        self SetHintString("Press [{+activate}] To Exit The " + type);
+        wait 1;
+    }
+}
+
+function StopRidingSpawnable(type, seat)
+{
+    self Unlink();
+    self SetOrigin(self.SpawnableSavedOrigin);
+    self SetPlayerAngles(self.SpawnableSavedAngles);
+
+    if(IsDefined(seat))
+    {
+        seat.Rider = undefined;
+        seat SetHintString("Press [{+activate}] To Ride The " + type);
+    }
+
+    if(Is_True(self.OnSpawnable))
+        self.OnSpawnable = BoolVar(self.OnSpawnable);
+}
+
+function GetSpawnableBaseModel(favor)
+{
+    if(!IsDefined(level.menu_models) || !level.menu_models.size)
+        return "defaultactor";
+    
+    //This will be a fallback for maps that don't have the favored models for spawnables
+    for(a = 0; a < level.menu_models.size; a++)
+    {
+        if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "vending_") && !IsSubStr(level.menu_models[a], "upgrade") && !IsSubStr(level.menu_models[a], "packapunch"))
+            model = level.menu_models[a];
+    }
+    
+    for(a = 0; a < level.menu_models.size; a++)
+    {
+        if(!IsSubStr(level.menu_models[a], "web_") && (IsSubStr(level.menu_models[a], "vending_doubletap") || IsSubStr(level.menu_models[a], "vending_sleight") || IsSubStr(level.menu_models[a], "vending_three_gun")))
+        {
+            model = level.menu_models[a];
+
+            if(IsDefined(favor) && IsDefined(model) && (model == favor || IsSubStr(model, favor)))
+                return model;
+        }
+    }
+
+    if(!IsDefined(model)) //If a model still isn't found after this, then spawnbales won't be available for the map
+    {
+        for(a = 0; a < level.menu_models.size; a++)
+        {
+            if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "machine"))
+                model = level.menu_models[a];
+        }
+    }
+
+    return model;
+}
+
+function GetSpawnablePerkBottle()
+{
+    for(a = 0; a < level.menu_models.size; a++)
+    {
+        if(IsDefined(level.menu_models[a]) && IsSubStr(level.menu_models[a], "perk_bottle") && !IsSubStr(level.menu_models[a], "broken"))
+            return level.menu_models[a];
+    }
+
+    //If there is no perk bottle found on the map, then we will just use the insta-kill model..if that isn't found, it will fallback to defaultactor
+    return ((IsDefined(level.zombie_powerups) && IsDefined(level.zombie_powerups["insta_kill"])) ? level.zombie_powerups["insta_kill"].model_name : "defaultactor");
+}
+
+
+
+
+
+//Rain Options
+function DisableLobbyRain(includePowerups = true)
+{
+    level notify("EndLobbyRain");
+
+    if(Is_True(includePowerups))
+        level.RainPowerups = undefined;
+    
+    level.LobbyRain = undefined;
+    level.LobbyRainType = undefined;
+}
+
+function LobbyRain(type, rain)
+{
+    if(IsDefined(level.LobbyRain) && IsDefined(level.LobbyRainType) && level.LobbyRainType == type && level.LobbyRain == rain)
+        return DisableLobbyRain(false);
+
+    level notify("EndLobbyRain");
+    level endon("EndLobbyRain");
+
+    level.LobbyRain = rain;
+    level.LobbyRainType = type;
+    
+    while(1)
+    {
+        player = bot::get_host_player();
+
+        if(!IsDefined(player) || !Is_Alive(player))
+        {
+            foreach(client in level.players)
+            {
+                if(!IsDefined(client) || !Is_Alive(client))
+                    continue;
+                
+                player = client;
+                break;
+            }
+        }
+
+        origin = (player.origin + (RandomIntRange(-2500, 2500), RandomIntRange(-2500, 2500), RandomIntRange(750, 3000)));
+
+        switch(type)
+        {
+            case "Projectile":
+                MagicBullet(rain, origin, (origin + (0, 0, -1000)));
+                break;
+            
+            case "Model":
+                RainModel = SpawnScriptModel(origin, rain);
+
+                if(!IsDefined(RainModel))
+                    break;
+                
+                RainModel NotSolid();
+                RainModel Launch(VectorScale(AnglesToForward(RainModel.angles), 10));
+                RainModel thread deleteAfter(10);
+                break;
+            
+            case "FX":
+                linker = SpawnScriptModel(origin, "tag_origin");
+
+                if(!IsDefined(linker))
+                    break;
+                
+                linker thread RainPlayFXOnTag(level._effect[rain], "tag_origin");
+                linker Launch(VectorScale(AnglesToForward(linker.angles), 10));
+                linker thread deleteAfter(10);
+                break;
+            
+            default:
+                break;
+        }
+        
+        wait ((type == "Model") ? 0.1 : 0.05);
+    }
+}
+
+function RainPlayFXOnTag(FX, tag)
+{
+    while(IsDefined(self))
+    {
+        PlayFXOnTag(FX, self, tag);
+        wait 0.5;
+    }
+}
+
+function RainPowerups()
+{
+    level.RainPowerups = BoolVar(level.RainPowerups);
+
+    while(Is_True(level.RainPowerups))
+    {
+        player = bot::get_host_player();
+
+        if(!IsDefined(player) || !Is_Alive(player))
+        {
+            foreach(client in level.players)
+            {
+                if(!IsDefined(client) || !Is_Alive(client))
+                    continue;
+                
+                player = client;
+                break;
+            }
+        }
+
+        powerup = level CustomPowerupSpawn(GetArrayKeys(level.zombie_include_powerups)[RandomInt(level.zombie_include_powerups.size)], player.origin + (RandomIntRange(-1000, 1000), RandomIntRange(-1000, 1000), RandomIntRange(750, 2000)));
+        
+        if(IsDefined(powerup))
+            powerup PhysicsLaunch(powerup.origin, (RandomIntRange(-5, 5), RandomIntRange(-5, 5), RandomIntRange(-5, 5)));
+
+        wait 0.05;
+    }
+}
+
+function CustomPowerupSpawn(powerup_name, drop_spot)
+{
+    powerup = zm_net::network_safe_spawn("powerup", 1, "script_model", drop_spot);
+
+    if(IsDefined(powerup))
+    {
+        powerup zm_powerups::powerup_setup(powerup_name);
+
+        if(!IsDefined(powerup))
+            return;
+
+        if(isInArray(level.active_powerups, powerup))
+            level.active_powerups = ArrayRemove(level.active_powerups, powerup);
+
+        powerup thread custom_powerup_timeout();
+        powerup thread zm_powerups::powerup_grab();
+        powerup thread zm_powerups::powerup_wobble_fx();
+
+        return powerup;
+    }
+}
+
+function custom_powerup_timeout()
+{
+    wait 5;
+
+    if(!IsDefined(self))
+        return;
+    
+    self notify("powerup_timedout");
+    self zm_powerups::powerup_delete();
+}
+
+
+
+
+
+
+
+
+//Small Spawnables
+function Tornado()
+{
+    if(!Is_True(level.TornadoSpawned))
+    {
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+        
+        origin = trace["position"];
+        surface = trace["surfacetype"];
+
+        if(IsDefined(surface) && (surface == "none" || surface == "default"))
+            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+    }
+    else
+    {
+        if(!IsDefined(level.SpawnableArray["Tornado"]) || !level.SpawnableArray["Tornado"].size)
+            return;
+        
+        for(a = 0; a < level.SpawnableArray["Tornado"].size; a++)
+        {
+            if(IsDefined(level.SpawnableArray["Tornado"][a]))
+                level.SpawnableArray["Tornado"][a] Delete();
+        }
+        
+        level notify("Tornado_Stop");
+        level.TornadoSpawned = BoolVar(level.TornadoSpawned);
+        return;
+    }
+
+    level endon("Tornado_Stop");
+    level.TornadoSpawned = true;
+    
+    TornadoParts = [];
+    level.tornadoTime = 0;
+    
+    TornadoParts[0] = SpawnScriptModel(origin, "tag_origin");
+    TornadoParts[0] SpawnableArray("Tornado");
+    color = Int(Pow(2, RandomInt(3)));
+
+    for(a = 1; a < 15; a++)
+    {
+        for(b = 0; b < (a + 2); b++)
+        {
+            TornadoParts[TornadoParts.size] = SpawnScriptModel(TornadoParts[0].origin + (Cos((b * 360) / (a + 2)) * (a * 6), Sin((b * 360) / (a + 2)) * (a * 6), (a * 18)), "tag_origin");
+            
+            TornadoParts[(TornadoParts.size - 1)] LinkTo(TornadoParts[0]);
+            TornadoParts[(TornadoParts.size - 1)] SpawnableArray("Tornado");
+            TornadoParts[(TornadoParts.size - 1)] clientfield::set("powerup_fx", color);
+            wait 0.01;
+        }
+    }
+
+    TornadoParts[0] thread TornadoMovement(TornadoParts[0].origin);
+    level thread TornadoWatchEntities(TornadoParts);
+}
+
+function TornadoMovement(defaultOrigin)
+{
+    level endon("Tornado_Stop");
+    self endon("EndTornadoMovement");
+    
+    while(IsDefined(self))
+    {
+        self zm_utility::create_zombie_point_of_interest(5000, 255, 10000, 1);
+        self MoveTo(self.origin + (RandomIntRange(-100, 100), RandomIntRange(-100, 100), 0), 3);
+        self RotateYaw(360, 3);
+        wait 3;
+    
+        if(!IsDefined(self))
+            break;
+
+        if(Distance(defaultOrigin, self.origin) >= 750)
+        {
+            self MoveTo(defaultOrigin, 3);
+            self RotateYaw(360, 3);
+
+            wait 3;
+        }
+    }
+}
+
+function TornadoWatchEntities(TornadoParts)
+{
+    level endon("Tornado_Stop");
+
+    wait 3;
+
+    while(1)
+    {
+        if(!IsDefined(TornadoParts) || !TornadoParts.size)
+            break;
+        
+        foreach(entity in GetEntArray("script_model", "classname"))
+        {
+            if(!IsDefined(entity) || isInArray(TornadoParts, entity) || Is_True(entity.OnTornado) || entity.model == "tag_origin")
+                continue;
+            
+            for(a = 1; a < TornadoParts.size; a++)
+            {
+                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, entity.origin) <= 100)
+                {
+                    entity thread TornadoLaunchEntity(a, TornadoParts);
+                    break;
+                }
+            }
+        }
+
+        foreach(player in level.players)
+        {
+            if(!IsDefined(player) || !Is_Alive(player) || player isPlayerLinked() || Is_True(player.OnTornado))
+                continue;
+            
+            for(a = 1; a < TornadoParts.size; a++)
+            {
+                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, player.origin) <= 100)
+                {
+                    player thread TornadoLaunchPlayer(a, TornadoParts);
+                    break;
+                }
+            }
+        }
+        
+        foreach(zombie in GetAITeamArray(level.zombie_team))
+        {
+            if(!IsDefined(zombie) || !IsAlive(zombie) || Is_True(zombie.OnTornado))
+                continue;
+            
+            for(a = 1; a < TornadoParts.size; a++)
+            {
+                if(IsDefined(TornadoParts[a]) && Distance(TornadoParts[a].origin, zombie.origin) <= 100)
+                {
+                    zombie thread TornadoLaunchZombie(a, TornadoParts);
+                    break;
+                }
+            }
+        }
+
+        wait 0.01;
+    }
+}
+
+function TornadoLaunchPlayer(a, TornadoParts)
+{
+    if(!IsDefined(self) || !Is_Alive(self))
+        return;
+    
+    level endon("Tornado_Stop");
+    self endon("disconnect");
+
+    self.OnTornado = true;
+
+    for(b = a; b < TornadoParts.size; b++)
+    {
+        if(!IsDefined(self) || !Is_Alive(self))
+            break;
+        
+        if(IsDefined(TornadoParts[b]) && b % 2)
+        {
+            self PlayerLinkTo(TornadoParts[b], "tag_origin");
+            wait 0.025;
+        }
+    }
+
+    if(!IsDefined(self) || !Is_Alive(self))
+        return;
+
+    self Unlink();
+
+    if(self IsOnGround())
+        self SetOrigin(self.origin + (0, 0, 5));
+
+    self SetVelocity(AnglesToForward(self GetPlayerAngles()) * 3500);
+    wait 1;
+
+    if(!IsDefined(self) || !Is_Alive(self))
+        return;
+
+    if(Is_True(self.OnTornado))
+        self.OnTornado = BoolVar(self.OnTornado);
+}
+
+function TornadoLaunchZombie(a, TornadoParts)
+{
+    if(!IsDefined(self) || !IsAlive(self))
+        return;
+    
+    level endon("Tornado_Stop");
+
+    self.OnTornado = true;
+
+    for(b = a; b < TornadoParts.size; b++)
+    {
+        if(!IsDefined(self) || !IsAlive(self))
+            break;
+        
+        if(IsDefined(TornadoParts[b]) && b % 2)
+        {
+            self ForceTeleport(TornadoParts[b].origin);
+            self LinkTo(TornadoParts[b]);
+
+            wait 0.025;
+        }
+    }
+    
+    if(!IsDefined(self) || !IsAlive(self))
+        return;
+
+    linker = SpawnScriptModel(self.origin, "tag_origin");
+    self LinkTo(linker, "tag_origin");
+    linker Launch(AnglesToForward(self.angles) * 3500);
+    wait 1;
+
+    if(!IsDefined(self) || !IsAlive(self))
+        return;
+
+    if(IsDefined(linker))
+        linker Delete();
+    
+    if(Is_True(self.OnTornado))
+        self.OnTornado = BoolVar(self.OnTornado);
+}
+
+function TornadoLaunchEntity(a, TornadoParts)
+{
+    if(!IsDefined(self))
+        return;
+    
+    self.OnTornado = true;
+
+    for(b = a; b < TornadoParts.size; b++)
+    {
+        if(!IsDefined(self))
+            break;
+        
+        if(b % 2 && IsDefined(TornadoParts[b]))
+        {
+            self.origin = TornadoParts[b].origin;
+            self LinkTo(TornadoParts[b]);
+
+            wait 0.025;
+        }
+    }
+
+    if(!IsDefined(self))
+        return;
+
+    self Unlink();
+    self Launch(AnglesToForward(self.angles) * 5500);
+    wait 1;
+
+    if(!IsDefined(self))
+        return;
+
+    if(Is_True(self.OnTornado))
+        self.OnTornado = BoolVar(self.OnTornado);
+}
+
+function MexicanWave(size = 0)
+{
+    if(Is_True(self.MexicanWaveSpawning) && size > 0)
+        return self iPrintlnBold("^1ERROR: Mexican Wave Is Currently Spawning");
+
+    if(IsDefined(self.MexicanWave) && self.MexicanWave.size || size < 1)
+    {
+        if(IsDefined(self.MexicanWave) && self.MexicanWave.size)
+        {
+            for(a = 0; a < self.MexicanWave.size; a++)
+            {
+                if(IsDefined(self.MexicanWave[a]))
+                    self.MexicanWave[a] Delete();
+            }
+        }
+        
+        self.MexicanWaveSpawning = undefined;
+        self.MexicanWave = undefined;
+        return;
+    }
+
+    trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+    origin = trace["position"];
+    surface = trace["surfacetype"];
+
+    if(IsDefined(surface) && (surface == "none" || surface == "default"))
+        return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+    
+    self.MexicanWave = [];
+    angles = self GetPlayerAngles();
+    self.MexicanWaveSpawning = true;
+
+    for(a = 0; a < size; a++)
+    {
+        self.MexicanWave[self.MexicanWave.size] = SpawnScriptModel(origin + (AnglesToRight(angles) * (a * 45)), "defaultactor", (0, angles[1], 0));
+
+        if(!IsDefined(self.MexicanWave[(self.MexicanWave.size - 1)]))
+        {
+            self MexicanWave(0);
+            self iPrintlnBold("^1ERROR: ^7Mexican Wave Failed To Spawn");
+            break;
+        }
+
+        self.MexicanWave[(self.MexicanWave.size - 1)] thread MexicanWaveMove(a);
+        wait 0.1;
+    }
+
+    self.MexicanWaveSpawning = undefined;
+}
+
+function MexicanWaveMove(index)
+{
+    wait (index * 0.2);
+
+    while(IsDefined(self))
+    {
+        self MoveZ(55, 0.75);
+        wait 0.74;
+
+        if(IsDefined(self))
+            self MoveZ(-55, 0.75);
+        
+        wait 0.74;
+    }
+}
+
+function SpiralStaircase(size)
+{
+    if(Is_True(level.SpiralStaircaseSpawning) && size > 0)
+        return self iPrintlnBold("^1ERROR: ^7Spiral Staircase Is Being Built");
+    
+    if(Is_True(level.SpiralStaircaseDeleting))
+        return self iPrintlnBold("^1ERROR: ^7Spiral Staircase Is Being Deleted");
+    
+    if(IsDefined(level.SpiralStaircase) && level.SpiralStaircase.size || size < 1)
+    {
+        level.SpiralStaircaseSpawning = undefined;
+        level.SpiralStaircaseDeleting = true;
+
+        if(IsDefined(level.SpiralStaircase) && level.SpiralStaircase.size)
+        {
+            for(a = 0; a < level.SpiralStaircase.size; a++)
+            {
+                if(IsDefined(level.SpiralStaircase[a]))
+                {
+                    level.SpiralStaircase[a] Launch(VectorScale(AnglesToForward(level.SpiralStaircase[a].angles), 255));
+                    level.SpiralStaircase[a] NotSolid();
+                    level.SpiralStaircase[a] thread deleteAfter(5);
+
+                    wait 0.01;
+                }
+            }
+        }
+        
+        wait 5;
+        level.SpiralStaircase = [];
+        level.SpiralStaircaseDeleting = undefined;
+    }
+    else
+    {
+        model = GetSpawnableBaseModel();
+        trace = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self);
+
+        if(!isInArray(level.menu_models, model))
+            return self iPrintlnBold("^1ERROR: ^7Couldn't Find A Valid Base Model For The Spiral Staircase");
+    
+        origin = trace["position"];
+        surface = trace["surfacetype"];
+
+        if(IsDefined(surface) && (surface == "none" || surface == "default"))
+            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+        
+        level.SpiralStaircaseSpawning = true;
+
+        if(!IsDefined(level.SpiralStaircase))
+            level.SpiralStaircase = [];
+        
+        level.SpiralStaircase[0] = SpawnScriptModel(origin, model, (-28, self GetPlayerAngles()[1], 90));
+        
+        for(a = 1; a < size; a++)
+        {
+            if(!IsDefined(level.SpiralStaircase[(level.SpiralStaircase.size - 1)]))
+            {
+                self iPrintlnBold("^1ERROR: ^7Spiral Staircase Failed To Spawn");
+                self SpiralStaircase(0);
+                return;
+            }
+            
+            level.SpiralStaircase[level.SpiralStaircase.size] = SpawnScriptModel((level.SpiralStaircase[(level.SpiralStaircase.size - 1)].origin + (AnglesToForward(level.SpiralStaircase[(level.SpiralStaircase.size - 1)].angles) * 10) + (0, 0, 8)), model, (level.SpiralStaircase[0].angles[0], (level.SpiralStaircase[(level.SpiralStaircase.size - 1)].angles[1] + 12), level.SpiralStaircase[0].angles[2]), 0.01);
+        }
+
+        level.SpiralStaircaseSpawning = undefined;
+    }
+}
+
+function SpawnTeleporter(action = "Spawn", origin, skipLink = false, skipDelete = false)
+{
+    if(IsDefined(action) && action == "Delete All")
+    {
+        DeleteTeleporters();
+        return;
+    }
+
+    if(!IsDefined(origin))
+    {
+        traceSurface = BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["surfacetype"];
+
+        if(traceSurface == "none" || traceSurface == "default")
+            return self iPrintlnBold("^1ERROR: ^7Invalid Surface");
+        
+        origin = self TraceBullet() + (0, 0, 45);
+    }
+
+    linker = SpawnScriptModel(origin, "tag_origin");
+    linker thread AddActiveTeleporter(skipLink, skipDelete);
+
+    return linker;
+}
+
+function DeleteTeleporters()
+{
+    if(!IsDefined(level.ActiveTeleporters) || !level.ActiveTeleporters.size)
+        return;
+    
+    foreach(teleporter in level.ActiveTeleporters)
+    {
+        if(IsDefined(teleporter) && !Is_True(teleporter.skipDelete))
+            teleporter Delete();
+    }
+}
+
+function AddActiveTeleporter(skipLink = false, skipDelete = false)
+{
+    if(!IsDefined(level.ActiveTeleporters))
+        level.ActiveTeleporters = [];
+    
+    if(isInArray(level.ActiveTeleporters, self))
+        return;
+    
+    if(level.ActiveTeleporters.size && !skipLink)
+    {
+        if(IsDefined(level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)]) && !IsDefined(level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)].LinkedTeleporter))
+        {
+            self.LinkedTeleporter = level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)];
+            level.ActiveTeleporters[(level.ActiveTeleporters.size - 1)].LinkedTeleporter = self;
+        }
+    }
+
+    self.skipDelete = skipDelete;
+    level.ActiveTeleporters[level.ActiveTeleporters.size] = self;
+
+    self MakeUsable();
+    self SetCursorHint("HINT_NOICON");
+    self SetHintString("Press ^3[{+activate}]^7 To Teleport");
+    self thread ActivateTeleporter();
+
+    while(IsDefined(self))
+    {
+        PlayFXOnTag(level._effect["teleport_aoe_kill"], self, "tag_origin");
+        wait 0.25;
+    }
+}
+
+function ActivateTeleporter()
+{
+    if(IsDefined(self.TeleporterActivated))
+        return;
+    self.TeleporterActivated = true;
+
+    while(IsDefined(self))
+    {
+        self waittill("trigger", player);
+        
+        if(Is_True(player.UsingTeleporter) || !IsDefined(self))
+            continue;
+        
+        if(!IsDefined(self.LinkedTeleporter))
+        {
+            player iPrintlnBold("^1ERROR: ^7No Linked Teleporter Found");
+            continue;
+        }
+        
+        player thread UseTeleporter(self);
+    }
+}
+
+function UseTeleporter(teleporter)
+{
+    if(!IsDefined(teleporter) || Is_True(self.UsingTeleporter) || !IsDefined(teleporter.LinkedTeleporter))
+        return;
+    
+    self.UsingTeleporter = true;
+    PlayFX(level._effect["teleport_splash"], teleporter.origin);
+    wait 0.05;
+
+    self SetOrigin(teleporter.LinkedTeleporter.origin);
+    PlayFX(level._effect["teleport_splash"], teleporter.LinkedTeleporter.origin);
+    wait 1.5;
+
+    if(Is_True(self.UsingTeleporter))
+        self.UsingTeleporter = BoolVar(self.UsingTeleporter);
+}
+
+// ============================================================
+// Functions/teleport.gsc
+// ============================================================
+
+function PopulateTeleportMenu(menu, player)
+{
+    switch(menu)
+    {
+        case "Teleport Menu":
+
+            MenuSpawnPoints = ArrayCombine(struct::get_array("player_respawn_point_arena", "targetname"), struct::get_array("player_respawn_point", "targetname"), 0, 1);
+            mapStr = ReturnMapName();
+            
+            self addMenu(menu);
+                self addOptBool(player.DisableTeleportEffect, "Disable Teleport Effect", &DisableTeleportEffect, player);
+                
+                if(IsDefined(MenuSpawnPoints) && MenuSpawnPoints.size)
+                    self addOptIncSlider("Official Spawn Points", &OfficialSpawnPoint, 0, 0, (MenuSpawnPoints.size - 1), 1, MenuSpawnPoints, player);
+                
+                if(ReturnMapName() != "Unknown")
+                    self addOpt(mapStr + " Teleports", &newMenu, mapStr + " Teleports");
+                
+                self addOpt("Entity Teleports", &newMenu, "Entity Teleports");
+                self addOptSlider("Teleport", &TeleportPlayer, Array("Crosshairs", "Sky", "Random Player"), player);
+                self addOptBool(player.TeleportGun, "Teleport Gun", &TeleportGun, player);
+                self addOptBool(player.SaveAndLoad, "Save & Load Position", &SaveAndLoad, player);
+                self addOpt("Save Current Location", &SaveCurrentLocation, player);
+                self addOpt("Load Saved Location", &LoadSavedLocation, player);
+
+                if(player != self)
+                {
+                    self addOpt("Teleport To Self", &TeleportPlayer, self, player);
+                    self addOpt("Teleport To Player", &TeleportPlayer, player, self);
+                }
+            break;
+        
+        case "Entity Teleports":            
+            self addMenu(menu);
+
+                if(IsDefined(level.chests[level.chest_index]))
+                    self addOpt("Mystery Box", &EntityTeleport, "Mystery Box", player);
+                
+                if(IsDefined(level.bgb_machines) && level.bgb_machines.size)
+                    self addOptIncSlider("BGB Machine", &EntityTeleport, 0, 0, (level.bgb_machines.size - 1), 1, player, "BGB Machine");
+                
+                tables = level.a_uts_craftables;
+
+                if(IsDefined(tables) && tables.size)
+                {
+                    valid = [];
+
+                    for(a = 0; a < tables.size; a++)
+                    {
+                        if(IsDefined(tables[a]) && IsDefined(tables[a].targetname))
+                        {
+                            if(tables[a].targetname != "open_craftable_trigger")
+                                continue;
+                            
+                            valid[valid.size] = a;
+                        }
+                    }
+
+                    if(valid.size)
+                        self addOptIncSlider("Crafting Table", &EntityTeleport, 0, 0, (valid.size - 1), 1, player, "Table");
+                }
+
+                perks = GetEntArray("zombie_vending", "targetname");
+
+                if(IsDefined(perks) && perks.size)
+                {
+                    foreach(perk in perks)
+                    {
+                        perkname = ReturnPerkName(CleanString(perk.script_noteworthy));
+
+                        if(perkname == "Unknown Perk")
+                            perkname = CleanString(perk.script_noteworthy);
+                        
+                        self addOpt(perkname, &EntityTeleport, perk.script_noteworthy, player);
+                    }
+                }
+            break;
+    }
+}
+
+function DisableTeleportEffect(player)
+{
+    player.DisableTeleportEffect = BoolVar(player.DisableTeleportEffect);
+}
+
+function OfficialSpawnPoint(index, points, player)
+{
+    player SetOrigin(points[index].origin);
+    player SetPlayerAngles(points[index].angles);
+
+    player PlayTeleportEffect();
+}
+
+function TeleportPlayer(origin, player, angles, name)
+{
+    if(!IsDefined(origin))
+        return;
+
+    if(IsPlayer(origin))
+        newOrigin = origin.origin;
+    
+    if(IsString(origin))
+    {
+        switch(origin)
+        {
+            case "Crosshairs":
+                newOrigin = self TraceBullet();
+                break;
+            
+            case "Sky":
+                newOrigin = player.origin + (0, 0, 35000);
+                break;
+            
+            case "Random Player":
+                if(level.players.size < 2)
+                    return self iPrintlnBold("^1ERROR: ^7Not Enough Players To Use This Option");
+                
+                index = RandomInt(level.players.size);
+
+                while(level.players[index] == player || !IsDefined(level.players[index]) || !IsPlayer(level.players[index]))
+                    index = RandomInt(level.players.size);
+                
+                newOrigin = level.players[index].origin;
+                break;
+        }
+    }
+    
+    if(!IsDefined(newOrigin))
+        newOrigin = origin;
+    
+    if(IsDefined(name) && ReturnMapName() == "Origins" && IsSubStr(name, "Robot Head") && !IsDefined(player.teleport_initial_origin))
+        player.teleport_initial_origin = player.origin;
+    
+    player SetOrigin(newOrigin);
+
+    if(IsDefined(angles))
+        player SetPlayerAngles(angles);
+
+    player PlayTeleportEffect();
+}
+
+function EntityTeleport(entity, player, eEntity)
+{
+    if(IsString(entity))
+    {
+        if(entity == "Mystery Box")
+        {
+            if(!IsDefined(level.chests) || !level.chests.size || !IsDefined(level.chests[level.chest_index]))
+                return;
+            
+            ent = level.chests[level.chest_index];
+            entAngleDir = (AnglesToRight(ent.angles) * -1);
+        }
+        
+        perks = GetEntArray("zombie_vending", "targetname");
+                    
+        if(IsDefined(perks) && perks.size)
+        {
+            foreach(perk in perks)
+            {
+                if(IsDefined(perk) && IsString(entity) && entity == perk.script_noteworthy)
+                {
+                    ent = perk.machine;
+                    
+                    if(IsDefined(ent))
+                        entAngleDir = AnglesToRight(ent.angles);
+                    
+                    break;
+                }
+            }
+        }
+    }
+    else if(IsInt(entity) && IsDefined(eEntity) && eEntity == "BGB Machine")
+    {
+        if(!IsDefined(level.bgb_machines) || !level.bgb_machines.size)
+            return;
+        
+        ent = level.bgb_machines[entity];
+
+        if(!IsDefined(ent))
+            return;
+        
+        entAngleDir = AnglesToRight(ent.angles);
+    }
+    else if(IsInt(entity) && IsDefined(eEntity) && eEntity == "Table")
+    {
+        tables = level.a_uts_craftables;
+
+        if(!IsDefined(tables) || !tables.size)
+            return;
+        
+        valid = [];
+
+        for(a = 0; a < tables.size; a++)
+        {
+            if(IsDefined(tables[a]) && IsDefined(tables[a].targetname))
+            {
+                if(tables[a].targetname != "open_craftable_trigger")
+                    continue;
+                
+                valid[valid.size] = a;
+            }
+        }
+        
+        ent = tables[valid[entity]];
+
+        if(!IsDefined(ent))
+            return;
+
+        entAngleDir = AnglesToForward(ent.angles);
+    }
+
+    if(!IsDefined(ent) || !IsDefined(entAngleDir))
+        return;
+    
+    player SetOrigin(ent.origin + (entAngleDir * 70));
+    player SetPlayerAngles(VectorToAngles((ent.origin + (0, 0, 55)) - player GetEye()));
+
+    player PlayTeleportEffect();
+}
+
+function TeleportGun(player)
+{
+    player endon("disconnect");
+    player endon("EndTeleportGun");
+    
+    player.TeleportGun = BoolVar(player.TeleportGun);
+
+    if(Is_True(player.TeleportGun))
+    {
+        while(Is_True(player.TeleportGun))
+        {
+            player waittill("weapon_fired");
+            
+            player SetOrigin(player TraceBullet());
+            player PlayTeleportEffect();
+        }
+    }
+    else
+    {
+        player notify("EndTeleportGun");
+    }
+}
+
+function SaveAndLoad(player)
+{
+    player endon("disconnect");
+
+    player.SaveAndLoad = BoolVar(player.SaveAndLoad);
+
+    if(Is_True(player.SaveAndLoad))
+    {
+        player iPrintlnBold("Press [{+actionslot 3}] To ^2Save Current Location");
+        player iPrintlnBold("Press [{+actionslot 2}] To ^2Load Saved Location");
+
+        while(Is_True(player.SaveAndLoad))
+        {
+            if(!player isInMenu(true))
+            {
+                if(player ActionslotThreeButtonPressed())
+                {
+                    player SaveCurrentLocation(player);
+                    wait 0.05;
+                }
+
+                if(player ActionslotTwoButtonPressed() && IsDefined(player.SavedOrigin))
+                {
+                    player LoadSavedLocation(player);
+                    wait 0.05;
+                }
+            }
+
+            wait 0.05;
+        }
+    }
+}
+
+function SaveCurrentLocation(player)
+{
+    player.SavedOrigin = player.origin;
+    player.SavedAngles = player.angles;
+}
+
+function LoadSavedLocation(player)
+{
+    if(!IsDefined(player.SavedOrigin))
+    {
+        if(player != self)
+            self iPrintlnBold("^1ERROR: ^7Player Doesn't Have A Location Saved");
+        else
+            self iPrintlnBold("^1ERROR: ^7You Have To Save A Location Before Using This Option");
+        
+        return;
+    }
+    
+    player SetOrigin(player.SavedOrigin);
+    player SetPlayerAngles(player.SavedAngles);
+
+    player PlayTeleportEffect();
+}
+
+function PlayTeleportEffect()
+{
+    if(!Is_True(self.DisableTeleportEffect))
+    {
+        PlayFX(level._effect["teleport_splash"], self.origin);
+        PlayFX(level._effect["teleport_aoe_kill"], self GetTagOrigin("j_spineupper"));
+        
+        self PlaySound("zmb_bgb_abh_teleport_in");
+    }
+}
+
+function GenerateMapTeleports()
+{
+    map = ReturnMapName();
+
+    if(map != "Unknown") //Feel free to add your own custom teleport locations
+    {
+        //Teleport Name, Followed By The Origin
+        //[< teleport location name >, < (x, y, z) origin >]
+
+        switch(map)
+        {
+            case "Shadows Of Evil":
+                locations = Array("Spawn", (1077.87, -5364.46, 124.719), "Pack 'a' Punch", (2614.68, -2348.33, -351.875), "Prison", (3007, -6542, 296.125));
+                break;
+            
+            case "The Giant":
+                locations = Array("Spawn", (-56.6293, 286.99, 98.125), "Power", (529.258, -1835.94, 61.6158), "Pack 'a' Punch", (-53.7356, 499.323, 101.125), "Prison", (-93.9053, -3268.56, -104.875));
+                break;
+            
+            case "Der Eisendrache":
+                locations = Array("Spawn", (421.786, 559.05, -47.875), "Power", (-27.8228, 2784.15, 848.125), "Pyramid", (-1476.97, 2253.83, 200.2), "Boss Fight Room", (-3182.63, 6962.58, -252.375), "Time Travel Room", (-278.407, 5001.93, 152.125), "Prison", (917.821, 912.26, 144.125));
+                break;
+            
+            case "Zetsubou No Shima":
+                locations = Array("Spawn", (393.455, -3181.32, -501.117), "Power", (-1475.2, 3456.67, -426.877), "Pack 'a' Punch", (246.815, 3818.53, -503.875), "Easter Egg Room", (-1974.675, 767.305, 276.125), "Prison", (2608, 1135, -175.875));
+                break;
+            
+            case "Gorod Krovi":
+                locations = Array("Spawn", (-144, -184, 0.125), "Power", (102, 4969, 144.125), "Pack 'a' Punch", (-2967, 21660, 0.125), "Prison", (-2152, 3644, 160.125));
+                break;
+            
+            case "Revelations":
+                locations = Array("Spawn", (-4812, 72, -451.2), "Pack 'a' Punch", (819, 145, -3301.9), "Origins", (-3006, 3470, 1066), "Nacht Der Untoten", (109, 448, -379.6), "Verruckt", (5027, -2366, 230), "Kino Der Toten", (-1393, -9218, -1663.5), "Shangri-La", (-2023, -4151, -1699.5), "Mob Of The Dead", (478, 3301, 1264.125), "Prison", (154, 474, -740.125));
+                break;
+            
+            case "Nacht Der Untoten":
+                locations = Array("Spawn", (53, 415, 5.25), "Prison", (-162, -396, 1.125));
+                break;
+            
+            case "Verruckt":
+                locations = Array("Spawn", (1097, 302, 64.125), "Power", (-357, -219, 226.125), "Prison", (1154, 791, 64.125));
+                break;
+            
+            case "Shi No Numa":
+                locations = Array("Spawn", (10267, 514, -528.875), "Out Of The Map", (12374, 4523, -664.875), "Under The Map", (11838, -1614, -1217.94), "Prison", (12500, -939, -644.875));
+                break;
+            
+            case "Kino Der Toten":
+                locations = Array("Spawn", (13.2366, -1262.8, 90.125), "Power", (-619.298, 1391.23, -15.875), "Pack 'a' Punch", (5.74551, -376.756, 320.125), "Air Force Room", (1154.75, 2650.46, -367.875), "Surgical Room", (1948.13, -2204.91, 136.125), "Samantha's Room", (-2636.31, 189.825, 52.125), "Samantha's Red Room", (-2620.55, -1106.91, 53.3851), "Prison", (-1590.36, -4760.5, -167.875));
+                break;
+            
+            case "Ascension":
+                locations = Array("Spawn", (-512, 3, -484.875), "Power", (-464, 1028, 220.125), "Pack 'a' Punch", (487, 389, -303.875), "Prison", (-228, 1306, -485.875));
+                break;
+            
+            case "Shangri-La":
+                locations = Array("Spawn", (-10, -740, 20.125), "Pack 'a' Punch", (-2, 381, 289.125), "Prison", (1052, 1275, -547.875));
+                break;
+            
+            case "Moon":
+                locations = Array("Earth Spawn", (22250, -38663, -679.875), "Moon Spawn", (-4, 32, -1.875), "Power", (42, 3100, -587.875), "Dome", (-162, 6893, 0.45), "Prison", (743, 966, -220.875));
+                break;
+            
+            case "Origins":
+                locations = Array("Spawn", (2698.43, 5290.48, -346.219), "Staff Chamber", (-2.4956, -2.693, -751.875), "The Crazy Place", (10334.5, -7891.93, -411.875), "Lightning Tunnel", (-3234, -372, -188), "Wind Tunnel", (3330, 1227, -343), "Fire Tunnel", (3064, 4395, -599), "Ice Tunnel", (1431, -1728, -121), "Robot Head: Odin", (-6759.17, -6541.72, 159.375), "Robot Head: Thor", (-6223.59, -6547.65, 159.375), "Robot Head: Freya", (-5699.83, -6540.03, 159.375), "Prison", (-3142.11, 1125.09, -63.875));
+                break;
+            
+            case "Mob Of The Dead":
+                locations = Array("Spawn", (-2185.649, 5548.136, 2688.125), "Pack 'a' Punch(Bridge)", (-10931.269, 31045.974, 3800.125), "Roof", (115.627, 4876.537, 3052.125), "Prison", (-2744.295, 3911.298, 2792.125));
+                break;
+            
+            case "Die Rise":
+                locations = Array("Spawn", (-880.691, 362.408, 1808.125), "Power", (460.962, -1024.275, -287.875), "Bank Showers", (0.08, -394.350, -287.875), "Prison", (-200.960, -1127.386, 944.125));
+                break;
+            
+            case "Bus Depot":
+                locations = Array("Spawn", (1444.05, 4467.5, 0.125), "Power", (1272.86, 4339.175, -151.625), "Pack 'a' Punch", (3121.84, 1892.9, 21.812), "Prison", (-484.175, 260.947, 0.125));
+                break;
+            
+            case "Tunnel":
+                locations = Array("Spawn", (1490.38, -2368.4, 275.8), "Power", (3952.9, -1431.5, 72.125), "Pack 'a' Punch", (1444.7, -449.98, 103.19), "Prison", (2175, -2836.6, 320.125));
+                break;
+            
+            case "Diner":
+                locations = Array("Spawn", (7583.19, -12471.09, -0.625), "Power", (10258.39, -12906.60, 95.125), "Pack 'a' Punch", (5171.02, -13046.58, 0.64), "Prison", (5516.14, -19922.40, -115.875));
+                break;
+            
+            case "Farm":
+                locations = Array("Spawn", (4924.46, -586.4, 80.92), "Power", (7154.933, 1721.47, -487.875), "Pack 'a' Punch", (6463.42, 1914.62, -487.875), "Prison", (5152.64, 2035.49, -247.875));
+                break;
+            
+            case "Der Riese: Declassified":
+                locations = Array("Spawn", (-51.78, 305.3, 98.375), "Power", (530.13, -1810.82, 61.125), "Pack 'a' Punch", (-55.18, 511, 101.125), "Prison", (5454.43, -20.8, -271.875), "Kino Der Toten", (28491.7, -1889, -323.16), "Nacht Der Untoten", (24360.625, -10584, -872.52), "Richtofen's Lab", (23457.99, 961.57, 57.21), "Samantha's Bedroom", (23346.86, -1918.75, 174.125), "Forest", (27320.9, -10309.79, -879.73), "Boss Fight", (41130, 37102.87, -1995.35));
+                break;
+            
+            case "Leviathan":
+                locations = Array("Spawn", (-789.95, -29.18, -484.875));
+                break;
+        }
+
+        return locations;
+    }
+}
+
+// ============================================================
+// Functions/weaponry.gsc
+// ============================================================
+
+function PopulateWeaponry(menu, player)
+{
+    switch(menu)
+    {
+        case "Weaponry":
+            weapons = Array("Assault Rifles", "Sub Machine Guns", "Light Machine Guns", "Sniper Rifles", "Shotguns", "Pistols", "Launchers", "Specials");
+
+            self addMenu(menu);
+
+                if(!IsVerkoMap())
+                {
+                    self addOpt("Options", &newMenu, "Weapon Options");
+                    self addOpt("Attachments", &newMenu, "Weapon Attachments");
+                    self addOpt("Loadout", &newMenu, "Weapon Loadout");
+                    self addOpt("Camo", &newMenu, "Weapon Camo");
+                    self addOpt("AAT", &newMenu, "Weapon AAT");
+                }
+                else
+                {
+                    self addOpt("Take Current Weapon", &TakeCurrentWeapon, player);
+                    self addOpt("Take All Weapons", &TakePlayerWeapons, player);
+                    self addOptSlider("Drop Current Weapon", &DropCurrentWeapon, Array("Take", "Don't Take"), player);
+                    self addOptSlider("Pack 'a' Punch Current Weapon", &VerkoPackCurrentWeapon, Array("None", "Upgrade", "Mastery"), player);
+                }
+
+                self addOpt("");
+                self addOpt("Equipment", &newMenu, "Equipment Menu");
+
+                if(!IsVerkoMap())
+                {
+                    for(a = 0; a < weapons.size; a++)
+                        self addOpt(weapons[a], &newMenu, weapons[a]);
+                }
+                else
+                {
+                    for(a = 0; a < level.var_21b77150.size; a++)
+                        self addOptBool(player HasWeapon1(GetWeapon(level.var_21b77150[a])), level.var_7df703ba[a], &GivePlayerWeapon, GetWeapon(level.var_21b77150[a]), player);
+                }
+            break;
+        
+        case "Weapon Options":
+            self addMenu("Options");
+                self addOpt("Take Current Weapon", &TakeCurrentWeapon, player);
+                self addOpt("Take All Weapons", &TakePlayerWeapons, player);
+                self addOptSlider("Drop Current Weapon", &DropCurrentWeapon, Array("Take", "Don't Take"), player);
+                self addOptBool(player zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()), "Pack 'a' Punch Current Weapon", &PackCurrentWeapon, player);
+            break;
+        
+        case "Weapon Loadout":
+            self addMenu("Loadout");
+                self addOpt("Save Primary Weapon", &SaveCurrentLoadout, "Primary", player);
+                self addOpt("Save Secondary Weapon", &SaveCurrentLoadout, "Secondary", player);
+                self addOpt("Save Primary Offhand", &SaveCurrentLoadout, "Primary Offhand", player);
+                self addOpt("Save Secondary Offhand", &SaveCurrentLoadout, "Secondary Offhand", player);
+                self addOpt("");
+                self addOpt("Reset", &ClearLoadout, player);
+            break;
+        
+        case "Weapon Camo":
+            self addMenu("Camo");
+                self addOptBool(player.FlashingCamo, "Flashing Camo", &FlashingCamo, player);
+                self addOpt("");
+
+                skip = Array(37, 72, 127, 128, 129, 130); //These are camos that aren't in the game anymore, so they will be skipped
+
+                for(a = 0; a < 139; a++)
+                {
+                    if(isInArray(skip, a))
+                        continue;
+                    
+                    self addOpt(((ReturnCamoName((a + 45)) == "" || IsSubStr(ReturnCamoName((a + 45)), "PLACEHOLDER") || ReturnCamoName((a + 45)) == "MPUI_CAMO_LOOT_CONTRACT") ? CleanString(ReturnRawCamoName((a + 45))) : ReturnCamoName((a + 45))), &SetPlayerCamo, a, player);
+                }
+            break;
+        
+        case "Weapon Attachments":
+            weapon = player GetCurrentWeapon();
+            
+            self addMenu("Attachments");
+
+                if(IsDefined(weapon.supportedAttachments) && weapon.supportedAttachments.size)
+                {
+                    foreach(attachment in weapon.supportedAttachments)
+                    {
+                        name = ReturnAttachmentName(attachment);
+
+                        if(!IsDefined(name) || name == "" || attachment == "dw")
+                            continue;
+                        
+                        if(attachment == "none")
+                            self addOpt(name, &GivePlayerAttachment, attachment, player);
+                        else
+                            self addOptBool((IsDefined(weapon.attachments) && isInArray(weapon.attachments, attachment)), name, &GivePlayerAttachment, attachment, player);
+                    }
+                }
+                else
+                {
+                    self addOpt("No Supported Attachments Found");
+                }
+            break;
+        
+        case "Weapon AAT":
+            keys = GetArrayKeys(level.aat);
+            
+            self addMenu("AAT");
+                
+                if(IsDefined(keys) && keys.size)
+                {
+                    for(a = 0; a < keys.size; a++)
+                    {
+                        if(IsDefined(keys[a]) && level.aat[keys[a]].name != "none")
+                            self addOptBool((IsDefined(player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())]) && player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())] == keys[a]), CleanString(level.aat[keys[a]].name), &GiveWeaponAAT, keys[a], player);
+                    }
+                }
+            break;
+        
+        case "Equipment Menu":
+            if(IsDefined(level.zombie_include_equipment))
+                include_equipment = GetArrayKeys(level.zombie_include_equipment);
+
+            equipment = ArrayCombine(level.zombie_lethal_grenade_list, level.zombie_tactical_grenade_list, 0, 1);
+            keys = GetArrayKeys(equipment);
+
+            self addMenu("Equipment");
+
+                if(IsDefined(keys) && keys.size || IsDefined(include_equipment) && include_equipment.size)
+                {
+                    foreach(index, weapon in GetArrayKeys(level.zombie_weapons))
+                    {
+                        if(isInArray(equipment, weapon))
+                            self addOptBool(player HasWeapon(weapon), weapon.displayname, &GivePlayerEquipment, weapon, player);
+                    }
+
+                    if(IsDefined(include_equipment) && include_equipment.size)
+                    {
+                        foreach(weapon in include_equipment)
+                            self addOptBool(player HasWeapon(weapon), weapon.displayname, &GivePlayerEquipment, weapon, player);
+                    }
+                }
+            break;
+    }
+}
+
+function PopulateWeaponCategoryMenu(menu, index, player)
+{
+    if(!IsDefined(index) || index < 0)
+        return;
+
+    self addMenu(menu);
+
+    weaponClasses = Array("assault", "smg", "lmg", "sniper", "cqb", "pistol", "launcher", "special");
+    weaponReclass = Array("ar", "smg", "lmg", "sniper", "shotgun", "pistol", "launcher", "special");
+
+    foreach(weapon in GetArrayKeys(level.zombie_weapons))
+    {
+        if(!IsDefined(weapon) || weapon == level.weaponnone)
+            continue;
+        
+        if(Is_True(weapon.isgrenadeweapon) || IsSubStr(weapon.name, "knife") || IsSubStr(weapon.name, "upgraded"))
+            continue;
+        
+        zmClass = zm_utility::GetWeaponClassZM(weapon);
+        newClass = undefined;
+
+        if(zmClass == "weapon_pistol")
+        {
+            weapTok = StrTok(weapon.name, "_");
+            newClass = weapTok[0];
+
+            if(!isInArray(weaponReclass, newClass))
+            {
+                zmClass = "weapon_special";
+            }
+            else
+            {
+                for(a = 0; a < weaponReclass.size; a++)
+                {
+                    if(weaponReclass[a] == newClass)
+                        zmClass = "weapon_" + weaponClasses[a];
+                }
+            }
+        }
+
+        if(zmClass != "weapon_" + weaponClasses[index])
+            continue;
+
+        self addOptBool(player HasWeapon1(weapon), ((IsDefined(weapon.displayname) && MakeLocalizedString(weapon.displayname) != "") ? weapon.displayname : weapon.name), &GivePlayerWeapon, weapon, player);
+    }
+
+    if(menu == "Specials")
+    {
+        defaultWeapon = GetWeapon("defaultweapon");
+        minigun = GetWeapon("minigun");
+
+        self addOptBool(player HasWeapon1(defaultWeapon), "Default Weapon", &GivePlayerWeapon, defaultWeapon, player);
+        self addOptBool(player HasWeapon1(minigun), minigun.displayname, &GivePlayerWeapon, minigun, player);
+
+        if(ReturnMapName() == "Shadows Of Evil")
+        {
+            teslaGun = GetWeapon("tesla_gun");
+            self addOptBool(player HasWeapon1(teslaGun), teslaGun.displayname, &GivePlayerWeapon, teslaGun, player);
+        }
+    }
+}
+
+function TakeCurrentWeapon(player)
+{
+    weapon = player GetCurrentWeapon();
+
+    if(!IsDefined(weapon) || weapon == level.weaponnone || IsDefined(level.weaponbasemelee) && weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
+        return;
+    
+    player TakeWeapon(weapon);
+}
+
+function TakePlayerWeapons(player)
+{
+    foreach(weapon in player GetWeaponsList(1))
+    {
+        if(!IsDefined(weapon) || weapon == level.weaponnone || IsDefined(level.weaponbasemelee) && weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
+            continue;
+        
+        player TakeWeapon(weapon);
+    }
+}
+
+function DropCurrentWeapon(type, player)
+{
+    weapon = player GetCurrentWeapon();
+    clip = player GetWeaponAmmoClip(player GetCurrentWeapon());
+    stock = player GetWeaponAmmoStock(player GetCurrentWeapon());
+
+    if(IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]))
+        aat = player.aat[player aat::get_nonalternate_weapon(weapon)];
+
+    player DropItem(weapon);
+
+    if(type == "Don't Take")
+    {
+        newWeapon = player zm_weapons::weapon_give(weapon, false, false, true);
+    
+        if(!IsDefined(newWeapon))
+            return;
+
+        if(IsDefined(weapon.savedCamo))
+            SetPlayerCamo(weapon.savedCamo, player);
+        
+        if(IsDefined(aat))
+            player aat::acquire(weapon, aat);
+        
+        player SetWeaponAmmoClip(newWeapon, clip);
+        player SetWeaponAmmoStock(newWeapon, stock);
+
+        if(!IsSubStr(newWeapon.name, "_knife"))
+            player SetSpawnWeapon(newWeapon, true);
+    }
+}
+
+function PackCurrentWeapon(player, buildKit = true)
+{
+    player endon("disconnect");
+
+    originalWeapon = player GetCurrentWeapon();
+
+    if(!IsDefined(originalWeapon) || !zm_weapons::can_upgrade_weapon(originalWeapon))
+        return self iPrintlnBold("^1ERROR: ^7Invalid Weapon");
+
+    newWeapon = (!zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()) ? zm_weapons::get_upgrade_weapon(player GetCurrentWeapon()) : zm_weapons::get_base_weapon(player GetCurrentWeapon()));
+
+    if(!IsDefined(newWeapon))
+        return;
+
+    base_weapon = newWeapon;
+    upgraded = 0;
+
+    if(zm_weapons::is_weapon_upgraded(newWeapon))
+    {
+        upgraded = 1;
+        base_weapon = zm_weapons::get_base_weapon(newWeapon);
+    }
+
+    if(zm_weapons::is_weapon_included(base_weapon))
+        force_attachments = zm_weapons::get_force_attachments(base_weapon.rootweapon);
+
+    camo = ((!upgraded && IsDefined(originalWeapon.savedCamo) && originalWeapon.savedCamo != level.pack_a_punch_camo_index) ? originalWeapon.savedCamo : (upgraded ? level.pack_a_punch_camo_index : undefined));
+
+    if(IsDefined(force_attachments) && force_attachments.size)
+    {
+        if(upgraded)
+        {
+            packed_attachments = [];
+
+            packed_attachments[packed_attachments.size] = "extclip";
+            packed_attachments[packed_attachments.size] = "fmj";
+
+            force_attachments = ArrayCombine(force_attachments, packed_attachments, 0, 0);
+        }
+
+        acvi = 0;
+        newWeapon = GetWeapon(newWeapon.rootweapon.name, force_attachments);
+        weapon_options = player CalcWeaponOptions(camo, 0, 0);
+    }
+    else
+    {
+        if(buildKit)
+        {
+            newWeapon = player GetBuildKitWeapon(newWeapon, upgraded);
+            weapon_options = player GetBuildKitWeaponOptions(newWeapon, camo);
+            acvi = player GetBuildKitAttachmentCosmeticVariantIndexes(newWeapon, upgraded);
+        }
+        else
+        {
+            acvi = 0;
+            weapon_options = player CalcWeaponOptions(camo, 0, 0);
+        }
+    }
+
+    if(!IsDefined(newWeapon))
+        return;
+
+    newWeapon.savedCamo = camo;
+
+    player TakeWeapon(player GetCurrentWeapon());
+    player GiveWeapon(newWeapon, weapon_options, acvi);
+    player GiveStartAmmo(newWeapon);
+    player SetSpawnWeapon(newWeapon, true);
+}
+
+function VerkoPackCurrentWeapon(type, player)
+{
+    currentWeapon = player GetCurrentWeapon();
+
+    if(!IsDefined(currentWeapon) || currentWeapon == level.weaponnone)
+        return self iPrintlnBold("^1ERROR: ^7Not A Valid Weapon");
+    
+    if(isInArray(level.var_21b77150, currentWeapon.name))
+    {
+        currentArray = level.var_21b77150;
+
+        if(type == "None")
+            return;
+    }
+    else if(isInArray(level.var_2b893b73, currentWeapon.name))
+    {
+        currentArray = level.var_2b893b73;
+
+        if(type == "Upgrade")
+            return;
+    }
+    else if(isInArray(level.var_23af580e, currentWeapon.name))
+    {
+        currentArray = level.var_23af580e;
+
+        if(type == "Mastery")
+            return;
+    }
+    else
+    {
+        return self iPrintlnBold("^1ERROR: Not A Valid Weapon");
+    }
+    
+    weaponIndex = 0;
+
+    for(a = 0; a < currentArray.size; a++)
+    {
+        if(currentArray[a] == currentWeapon.name)
+            weaponIndex = a;
+    }
+    
+    switch(type)
+    {
+        case "None":
+            newWeapon = GetWeapon(level.var_21b77150[weaponIndex]);
+            break;
+        
+        case "Upgrade":
+            newWeapon = GetWeapon(level.var_2b893b73[weaponIndex]);
+            break;
+        
+        case "Mastery":
+            newWeapon = GetWeapon(level.var_23af580e[weaponIndex]);
+            break;
+    }
+    
+    player TakeWeapon(currentWeapon);
+    player GiveWeapon(newWeapon);
+    player GiveStartAmmo(newWeapon);
+    player SetSpawnWeapon(newWeapon, true);
+    wait 0.05;
+
+    if(type == "Mastery")
+    {
+        aatName = VerkoGetAAT(level.var_fc480cef[weaponIndex]);
+
+        if(aatName != "undefined")
+            player thread aat::acquire(newWeapon, aatName);
+    }
+}
+
+function VerkoGetAAT(aat)
+{
+    switch(aat)
+    {
+        case "deadwire":
+            return "zm_aat_dead_wire";
+        
+        case "blastfurnace":
+            return "zm_aat_blast_furnace";
+        
+        case "thunderwall":
+            return "zm_aat_thunder_wall";
+        
+        case "turned":
+            return "zm_aat_turned";
+        
+        case "fireworks":
+            return "zm_aat_fire_works";
+        
+        case "aethercollapse":
+            return "zm_aat_aethercollapse";
+        
+        default:
+            return "undefined";
+    }
+}
+
+function GivePlayerAttachment(attachment, player)
+{
+    player endon("disconnect");
+
+    weapon = player GetCurrentWeapon();
+    attachments = weapon.attachments;
+
+    if(IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]))
+        aat = player.aat[player aat::get_nonalternate_weapon(weapon)];
+    
+    if(isInArray(attachments, attachment)) //If the weapon has the attachment, it will be removed
+    {
+        attachments = ArrayRemove(attachments, attachment);
+    }
+    else //If the weapon doesn't have the attachment, it will be added
+    {
+        if(!IsValidCombination(attachments, attachment))
+        {
+            invalid = GetInvalidAttachments(attachments, attachment);
+
+            if(IsDefined(invalid) && invalid.size)
+            {
+                for(a = 0; a < invalid.size; a++)
+                    attachments = ArrayRemove(attachments, invalid[a]);
+            }
+        }
+        
+        array::add(attachments, attachment, 0);
+
+        if(attachments.size > 8)
+            return self iPrintlnBold("^1ERROR: ^7Attachment Limit Reached");
+    }
+
+    newWeapon = GetWeapon(weapon.rootweapon.name, attachments);
+    camo = (IsDefined(weapon.savedCamo) ? weapon.savedCamo : 0);
+    weapon_options = player CalcWeaponOptions(camo, 0, 0);
+    newWeapon.savedCamo = camo;
+    
+    player TakeWeapon(weapon);
+    player GiveWeapon(newWeapon, weapon_options);
+    player SetSpawnWeapon(newWeapon, true);
+
+    if(IsDefined(aat))
+        player aat::acquire(newWeapon, aat);
+}
+
+function IsValidCombination(attachments, attachment)
+{
+    valid = ReturnAttachmentCombinations(attachment);
+    tokens = StrTok(valid, " ");
+
+    for(a = 0; a < attachments.size; a++)
+    {
+        if(!isInArray(tokens, attachments[a]))
+            return false;
+    }
+    
+    return true;
+}
+
+function GetInvalidAttachments(attachments, attachment)
+{
+    valid = ReturnAttachmentCombinations(attachment);
+    tokens = StrTok(valid, " ");
+
+    invalid = [];
+
+    for(a = 0; a < attachments.size; a++)
+    {
+        if(!isInArray(tokens, attachments[a]))
+            array::add(invalid, attachments[a], 0);
+    }
+    
+    return invalid;
+}
+
+function SaveCurrentLoadout(type, player)
+{
+    userID = player GetXUID();
+
+    if(!IsSubStr(ToLower(type), "offhand"))
+    {
+        weapon = player GetCurrentWeapon();
+
+        if(!IsDefined(weapon) || weapon == level.weaponnone || weapon == level.weaponbasemelee || IsSubStr(weapon.name, "_knife"))
+            return self iPrintlnBold("^1ERROR: ^7Invalid Weapon");
+
+        if(IsDefined(weapon.attachments) && weapon.attachments.size)
+        {
+            attachments = "";
+
+            foreach(index, attachment in weapon.attachments) attachments += ((index == (weapon.attachments.size - 1)) ? attachment : attachment + ";");
+        }
+        else
+        {
+            attachments = "none";
+        }
+        
+        SetDvar("Loadout_" + type + "_" + userID, zm_weapons::get_base_weapon(weapon).name);
+        SetDvar("Loadout_" + type + "_Attachments_" + userID, attachments);
+        SetDvar("Loadout_" + type + "_Camo_" + userID, (IsDefined(weapon.savedCamo) ? weapon.savedCamo : 0));
+        SetDvar("Loadout_" + type + "_Upgraded_" + userID, zm_weapons::is_weapon_upgraded(weapon));
+        SetDvar("Loadout_" + type + "_AAT_" + userID, (IsDefined(player.aat[player aat::get_nonalternate_weapon(weapon)]) ? player.aat[player aat::get_nonalternate_weapon(weapon)] : "none"));
+    }
+    else
+    {
+        saveType = ((type == "Primary Offhand") ? "primary_offhand" : "secondary_offhand");
+        weapon = ((type == "Primary Offhand") ? player zm_utility::get_player_lethal_grenade() : player zm_utility::get_player_tactical_grenade());
+        
+        if(!IsDefined(weapon) || weapon == level.weaponnone)
+            return self iPrintlnBold("^1ERROR: ^7Invalid Offhand");
+        
+        SetDvar("Loadout_" + saveType + "_" + userID, weapon.name);
+    }
+    
+    SetDvar("Apparition_Loadout_" + userID, 1);
+    self iPrintlnBold(type + " ^2Saved");
+}
+
+function ClearLoadout(player)
+{
+    userID = player GetXUID();
+    saved = GetDvarInt("Apparition_Loadout_" + userID);
+
+    if(!IsDefined(saved) || !saved)
+        return;
+    
+    types = Array("Primary", "Secondary");
+
+    SetDvar("Apparition_Loadout_" + userID, 0);
+
+    foreach(type in types)
+    {
+        SetDvar("Loadout_" + type + "_" + userID, "");
+        SetDvar("Loadout_" + type + "_Attachments_" + userID, "");
+        SetDvar("Loadout_" + type + "_Camo_" + userID, 0);
+        SetDvar("Loadout_" + type + "_Upgraded_" + userID, 0);
+        SetDvar("Loadout_" + type + "_AAT_" + userID, "");
+    }
+
+    types = Array("primary_offhand", "secondary_offhand");
+
+    foreach(type in types)
+        SetDvar("Loadout_" + type + "_" + userID, "");
+    
+    self iPrintlnBold("Loadout ^2Cleared");
+}
+
+function GivePlayerLoadout()
+{
+    self endon("disconnect");
+
+    userID = self GetXUID();
+    
+    if(GetDvarInt("Apparition_Loadout_" + userID))
+    {
+        types = Array("Secondary", "Primary");
+        first = true;
+
+        foreach(type in types)
+        {
+            weapon = GetDvarString("Loadout_" + type + "_" + userID);
+
+            if(!IsDefined(weapon) || weapon == "" || !isInArrayKeys(level.zombie_weapons, GetWeapon(weapon)))
+                continue;
+            
+            if(first)
+            {
+                foreach(primary in self GetWeaponsListPrimaries())
+                {
+                    if(!IsDefined(primary) || primary == level.weaponnone || primary == level.weaponbasemelee || IsSubStr(primary.name, "_knife"))
+                        continue;
+                    
+                    self TakeWeapon(primary);
+                }
+
+                first = false;
+            }
+
+            newWeapon = GivePlayerWeapon(GetWeapon(weapon), self);
+
+            if(IsDefined(newWeapon.attachments) && newWeapon.attachments.size) //Fix for build kit attachments conflicting saved attachments
+            {
+                attachments = [];
+                baseWeapon = GetWeapon(newWeapon.rootweapon.name, attachments);
+
+                self TakeWeapon(newWeapon);
+                self GiveWeapon(baseWeapon);
+                self SetSpawnWeapon(baseWeapon, true);
+            }
+
+            if(GetDvarInt("Loadout_" + type + "_Upgraded_" + userID))
+                PackCurrentWeapon(self, false);
+            
+            weaponCamo = GetDvarInt("Loadout_" + type + "_Camo_" + userID);
+
+            if(weaponCamo)
+            {
+                newWeapon.savedCamo = weaponCamo;
+                SetPlayerCamo(weaponCamo, self);
+            }
+
+            weaponAAT = GetDvarString("Loadout_" + type + "_AAT_" + userID);
+
+            if(IsDefined(weaponAAT) && weaponAAT != "" && weaponAAT != "none")
+                GiveWeaponAAT(weaponAAT, self);
+            
+            weaponAttachments = GetDvarString("Loadout_" + type + "_Attachments_" + userID);
+
+            if(IsDefined(weaponAttachments) && weaponAttachments != "" && weaponAttachments != "none")
+            {
+                attachments = StrTok(weaponAttachments, ";");
+
+                for(a = 0; a < attachments.size; a++)
+                    GivePlayerAttachment(attachments[a], self);
+            }
+        }
+
+        level flag::wait_till("initial_blackscreen_passed");
+        wait 4;
+
+        types = Array("primary_offhand", "secondary_offhand");
+
+        foreach(type in types)
+        {
+            weapon = GetDvarString("Loadout_" + type + "_" + userID);
+
+            if(!IsDefined(weapon) || weapon == "" || weapon == level.weaponnone || !isInArrayKeys(level.zombie_weapons, GetWeapon(weapon)) && !isInArrayKeys(level.zombie_include_equipment, GetWeapon(weapon)))
+                continue;
+            
+            if(self HasWeapon(GetWeapon(weapon)))
+            {
+                self GiveStartAmmo(GetWeapon(weapon));
+                continue;
+            }
+            
+            GivePlayerEquipment(GetWeapon(weapon), self);
+            self GiveStartAmmo(GetWeapon(weapon));
+        }
+    }
+}
+
+function SetPlayerCamo(camo, player)
+{
+    weap = player GetCurrentWeapon();
+
+    if(!IsDefined(weap) || weap == level.weaponnone)
+        return;
+
+    weapon = player CalcWeaponOptions(camo, 0, 0);
+    NewWeapon = player GetBuildKitAttachmentCosmeticVariantIndexes(weap, zm_weapons::is_weapon_upgraded(player GetCurrentWeapon()));
+    
+    player TakeWeapon(weap);
+    player GiveWeapon(weap, weapon, NewWeapon);
+    player SetSpawnWeapon(weap, true);
+
+    weap.savedCamo = camo;
+}
+
+function FlashingCamo(player)
+{
+    player endon("disconnect");
+
+    player.FlashingCamo = BoolVar(player.FlashingCamo);
+
+    while(Is_True(player.FlashingCamo))
+    {
+        if(!player IsMeleeing() && !player IsSwitchingWeapons() && !player IsReloading() && !player IsSprinting() && !player IsUsingOffhand() && !zm_utility::is_placeable_mine(player GetCurrentWeapon()) && !zm_equipment::is_equipment(player GetCurrentWeapon()) && !player zm_utility::has_powerup_weapon() && !zm_utility::is_hero_weapon(player GetCurrentWeapon()) && !player zm_utility::in_revive_trigger() && !player.is_drinking && player GetCurrentWeapon() != level.weaponnone)
+            SetPlayerCamo(RandomInt(139), player);
+        
+        wait 0.25;
+    }
+}
+
+function GiveWeaponAAT(aat, player)
+{
+    player endon("disconnect");
+
+    if(!IsDefined(player.aat))
+        player.aat = [];
+    
+    if(!IsDefined(player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())]) || player.aat[player aat::get_nonalternate_weapon(player GetCurrentWeapon())] != aat)
+    {
+        player aat::acquire(player GetCurrentWeapon(), aat);
+    }
+    else
+    {
+        player aat::remove(player GetCurrentWeapon());
+        player clientfield::set_to_player("aat_current", 0);
+    }
+}
+
+function GivePlayerEquipment(equipment, player)
+{
+    if(player HasWeapon(equipment))
+        player TakeWeapon(equipment);
+    else
+        player zm_weapons::weapon_give(equipment, false, false, true);
+}
+
+function GivePlayerWeapon(weapon, player)
+{
+    if(player HasWeapon1(weapon))
+    {
+        weapons = player GetWeaponsList(true);
+
+        if(!IsVerkoMap())
+        {
+            for(a = 0; a < weapons.size; a++)
+            {
+                if(zm_weapons::get_base_weapon(weapons[a]) == zm_weapons::get_base_weapon(weapon))
+                    weapon = weapons[a];
+            }
+        }
+        else
+        {
+            for(a = 0; a < weapons.size; a++)
+            {
+                if(VerkoGetBaseWeapon(weapons[a]) == VerkoGetBaseWeapon(weapon))
+                    weapon = weapons[a];
+            }
+        }
+
+        player TakeWeapon(weapon);
+        return;
+    }
+    
+    newWeapon = player zm_weapons::weapon_give(weapon, false, false, true);
+    player GiveStartAmmo(newWeapon);
+
+    if(!IsSubStr(newWeapon.name, "_knife"))
+        player SetSpawnWeapon(newWeapon, true);
+    
+    return newWeapon;
+}
+
+function VerkoGetBaseWeapon(weapon)
+{
+    if(!isInArray(level.var_2b893b73, weapon.name) && !isInArray(level.var_23af580e, weapon.name))
+        return weapon;
+    
+    if(isInArray(level.var_2b893b73, weapon.name))
+        currentArray = level.var_2b893b73;
+    else if(isInArray(level.var_23af580e, weapon.name))
+        currentArray = level.var_23af580e;
+    
+    if(!IsDefined(currentArray))
+        return weapon;
+    
+    for(a = 0; a < currentArray.size; a++)
+    {
+        if(currentArray[a] == weapon.name)
+            return GetWeapon(level.var_21b77150[a]);
+    }
+}
+
+function HasWeapon1(weapon)
+{
+    if(!IsDefined(weapon))
+        return false;
+    
+    weapons = self GetWeaponsList(true);
+
+    if(!IsDefined(weapons) || !weapons.size)
+        return false;
+
+    if(!IsVerkoMap())
+    {
+        for(a = 0; a < weapons.size; a++)
+        {
+            if(zm_weapons::get_base_weapon(weapons[a]) == zm_weapons::get_base_weapon(weapon))
+                return true;
+        }
+    }
+    else
+    {
+        for(a = 0; a < weapons.size; a++)
+        {
+            if(VerkoGetBaseWeapon(weapons[a]) == VerkoGetBaseWeapon(weapon))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// ============================================================
+// Functions/zombies.gsc
+// ============================================================
+
+function PopulateZombieOptions(menu)
+{
+    switch(menu)
+    {
+        case "Zombie Options":
+            self addMenu(menu);
+                self addOpt("Spawner", &newMenu, "AI Spawner");
+                self addOpt("Prioritize", &newMenu, "Prioritize Players");
+                self addOpt("Death Effect", &newMenu, "Zombie Death Effect");
+                self addOpt("Damage Effect", &newMenu, "Zombie Damage Effect");
+                self addOpt("Animations", &newMenu, "Zombie Animations");
+                self addOpt("Model", &newMenu, "Zombie Model Manipulation");
+                self addOptSlider("Gib", &ZombieGibBone, Array("Random", "Head", "Right Leg", "Left Leg", "Right Arm", "Left Arm"));
+                self addOptSlider("Kill", &KillZombies, Array("Death", "Head Gib", "Flame", "Delete"));
+                self addOptSlider("Health", &SetZombieHealth, Array("Custom", "Reset"));
+                self addOptSlider("Movement", &SetZombieRunSpeed, Array("Walk", "Run", "Sprint", "Super Sprint"));
+                
+                //The only map Knockdown isn't registered on is The Giant
+                if(ReturnMapName() != "The Giant")
+                    self addOptSlider("Knockdown", &KnockdownZombies, Array("Front", "Back"));
+
+                //Push is only registered on SOE
+                if(ReturnMapName() == "Shadows Of Evil")
+                    self addOptSlider("Push", &PushZombies, Array("Left", "Right"));
+                
+                self addOptSlider("Teleport", &TeleportZombies, Array("Crosshairs", "Self"));
+                self addOptIncSlider("Animation Speed", &SetZombieAnimationSpeed, 1, 1, 2, 0.5);
+                self addOptBool(level.ZombiesToCrosshairsLoop, "Teleport To Crosshairs", &ZombiesToCrosshairsLoop);
+                self addOptBool(level.DisableZombieCollision, "Disable Player Collision", &DisableZombieCollision);
+                self addOptBool((GetDvarString("ai_disableSpawn") == "1"), "Disable Spawning", &DisableZombieSpawning);
+                self addOptBool(level.DisableZombiePush, "Disable Push", &DisableZombiePush);
+                self addOptBool(level.ZombiesInvisibility, "Invisibility", &ZombiesInvisibility);
+                self addOptBool((GetDvarString("g_ai") == "0"), "Freeze", &FreezeZombies);
+                self addOptBool(level.ZombieDeathSounds, "Death Sounds", &ZombieDeathSounds);
+                self addOptBool(level.ZombieProjectileVomiting, "Projectile Vomit", &ZombieProjectileVomiting);
+                self addOptBool(level.DisappearingZombies, "Disappearing Zombies", &DisappearingZombies);
+                self addOptBool(level.ExplodingZombies, "Exploding Zombies", &ExplodingZombies);
+                self addOptBool(level.ZombieRagdoll, "Ragdoll After Death", &ZombieRagdoll);
+                self addOptBool(level.StackZombies, "Stack Zombies", &StackZombies);
+                self addOptBool(level.RemoveZombieEyes, "Remove Eyes", &RemoveZombieEyes);
+                self addOptBool((GetDvarVector("phys_gravity_dir") == (0, 0, -1)), "Bodies Float", &BodiesFloat);
+                self addOpt("Make Crawlers", &ForceZombieCrawlers);
+                self addOpt("Detach Heads", &DetachZombieHeads);
+                self addOpt("Clear All Corpses", &ServerClearCorpses);
+            break;
+        
+        case "AI Spawner":
+            if(!IsDefined(self.AISpawnLocation))
+                self.AISpawnLocation = "Crosshairs";
+            
+            map = ReturnMapName();
+            
+            self addMenu("Spawner");
+                self addOptSlider("Spawn Location", &AISpawnLocation, Array("Crosshairs", "Random", "Self"));
+                self addOptIncSlider("Zombie", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnZombie);
+
+                if(map != "Unknown")
+                {
+                    maps = Array("Shi No Numa", "The Giant", "Moon", "Kino Der Toten", "Der Eisendrache");
+
+                    if(isInArray(maps, map))
+                        self addOptIncSlider("Hellhound", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnDog);
+                    
+                    maps = Array("Shadows Of Evil", "Revelations", "Gorod Krovi");
+
+                    if(isInArray(maps, map))
+                    {
+                        if(map != "Gorod Krovi")
+                        {
+                            self addOptIncSlider("Wasp", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnWasp);
+                            self addOptIncSlider("Margwa", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMargwa);
+
+                            if(map == "Shadows Of Evil")
+                                self addOptIncSlider("Civil Protector", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnCivilProtector);
+                        }
+                        
+                        if(map != "Revelations")
+                            self addOptIncSlider("Raps", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnRaps);
+                    }
+
+                    maps = Array("Origins", "Der Eisendrache", "Revelations");
+
+                    if(isInArray(maps, map))
+                        self addOptIncSlider("Mechz", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMechz);
+                    
+                    if(map == "Gorod Krovi")
+                    {
+                        self addOptIncSlider("Sentinel Drone", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnSentinelDrone);
+                        self addOptIncSlider("Mangler", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnMangler);
+                    }
+
+                    if(map == "Zetsubou No Shima" || map == "Revelations")
+                    {
+                        if(map == "Zetsubou No Shima")
+                            self addOptIncSlider("Thrasher", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnThrasher);
+                        
+                        self addOptIncSlider("Spider", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnSpider);
+                    }
+
+                    if(map == "Revelations")
+                        self addOptIncSlider("Fury", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnFury);
+                    
+                    if(map == "Kino Der Toten")
+                        self addOptIncSlider("Nova Zombie", &ServerSpawnAI, 1, 1, 10, 1, &ServerSpawnNovaZombie);
+                }
+            break;
+        
+        case "Prioritize Players":
+            self addMenu(menu);
+            
+                foreach(player in level.players)
+                    self addOptBool(player.AIPrioritizePlayer, CleanName(player getName()), &AIPrioritizePlayer, player);
+            break;
+        
+        case "Zombie Death Effect":
+            self addMenu("Death Effect");
+                self addOptBool(!IsDefined(level.ZombiesDeathFX), "Disable", &SetZombiesDeathEffect, "");
+                self addOpt("");
+
+                for(a = 0; a < level.menuFX.size; a++)
+                    self addOptBool((IsDefined(level.ZombiesDeathFX) && level.ZombiesDeathFX == level.menuFX[a]), CleanString(level.menuFX[a]), &SetZombiesDeathEffect, level.menuFX[a]);
+            break;
+
+        case "Zombie Damage Effect":
+            self addMenu("Damage Effect");
+                self addOptBool(!IsDefined(level.ZombiesDamageFX), "Disable", &SetZombiesDamageEffect, "");
+                self addOpt("");
+
+                for(a = 0; a < level.menuFX.size; a++)
+                    self addOptBool((IsDefined(level.ZombiesDamageFX) && level.ZombiesDamageFX == level.menuFX[a]), CleanString(level.menuFX[a]), &SetZombiesDamageEffect, level.menuFX[a]);
+            break;
+        
+        case "Zombie Animations":
+
+            //These are base animations that will work on every map
+            anims = Array("ai_zombie_base_ad_attack_v1", "ai_zombie_base_ad_attack_v2", "ai_zombie_base_ad_attack_v3", "ai_zombie_base_ad_attack_v4", "ai_zombie_taunts_4");
+            notifies = Array("attack_anim", "attack_anim", "attack_anim", "attack_anim", "taunt_anim");
+
+            //These are the animations that are map specific
+            if(ReturnMapName() == "Origins")
+            {
+                add_anims = Array("ai_zombie_mech_ft_burn_player", "ai_zombie_mech_exit", "ai_zombie_mech_exit_hover", "ai_zombie_mech_arrive");
+                add_notifies = Array("flamethrower_anim", "zm_fly_out", "zm_fly_hover_finished", "zm_fly_in");
+            }
+            
+            if(IsDefined(add_anims) && add_anims.size)
+            {
+                anims = ArrayCombine(anims, add_anims, 0, 1);
+                notifies = ArrayCombine(notifies, add_notifies, 0, 1);
+            }
+
+            self addMenu("Animations");
+
+                for(a = 0; a < anims.size; a++)
+                    self addOpt(CleanString(anims[a]), &ZombieAnimScript, anims[a], notifies[a]);
+            break;
+        
+        case "Zombie Model Manipulation":
+            self addMenu("Model Manipulation");
+                
+                if(IsDefined(level.menu_models) && level.menu_models.size)
+                {
+                    self addOptBool(!IsDefined(level.ZombieModel), "Disable", &DisableZombieModel);
+                    self addOpt("");
+
+                    for(a = 0; a < level.menu_models.size; a++)
+                        self addOptBool((IsDefined(level.ZombieModel) && level.ZombieModel == level.menu_models[a]), CleanString(level.menu_models[a]), &SetZombieModel, level.menu_models[a]);
+                }
+            break;
+    }
+}
+
+function AIPrioritizePlayer(player)
+{
+    player endon("disconnect");
+        
+    player.AIPrioritizePlayer = BoolVar(player.AIPrioritizePlayer);
+    
+    if(Is_True(player.AIPrioritizePlayer))
+    {
+        if(Is_True(player.playerIgnoreMe))
+            NoTarget(player);
+        
+        while(Is_True(player.AIPrioritizePlayer))
+        {
+            if(!Is_True(player.b_is_designated_target))
+                player.b_is_designated_target = true;
+            
+            wait 0.1;
+        }
+    }
+    else
+    {
+        player.b_is_designated_target = false;
+    }
+}
+
+function SetZombiesDeathEffect(effect)
+{
+    if(!IsDefined(effect) || !IsString(effect) || effect == "" || IsDefined(level.ZombiesDeathFX) && level.ZombiesDeathFX == effect)
+        level.ZombiesDeathFX = undefined;
+    else
+        level.ZombiesDeathFX = effect;
+}
+
+function SetZombiesDamageEffect(effect)
+{
+    if(!IsDefined(effect) || !IsString(effect) || effect == "" || IsDefined(level.ZombiesDamageFX) && level.ZombiesDamageFX == effect)
+        level.ZombiesDamageFX = undefined;
+    else
+        level.ZombiesDamageFX = effect;
+}
+
+function ZombieAnimScript(anm, ntfy)
+{
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
+            continue;
+        
+        zombies[a] StopAnimScripted(0);
+        zombies[a] AnimScripted(ntfy, zombies[a].origin, zombies[a].angles, anm);
+    }
+}
+
+function SetZombieModel(model)
+{
+    if(IsDefined(level.ZombieModel) && model != level.ZombieModel || !IsDefined(level.ZombieModel))
+    {
+        level.ZombieModel = model;
+        zombies = GetAITeamArray(level.zombie_team);
+
+        if(IsDefined(zombies) && zombies.size)
+        {
+            foreach(zombie in zombies)
+            {
+                if(IsDefined(zombie) && IsAlive(zombie) && zombie.model != level.ZombieModel)
+                {
+                    if(!IsDefined(zombie.savedModel))
+                        zombie.savedModel = zombie.model;
+                    
+                    zombie SetModel(level.ZombieModel);
+                }
+            }
+        }
+
+        spawner::add_archetype_spawn_function("zombie", &SetZombieSpawnModel);
+    }
+    else
+    {
+        DisableZombieModel();
+    }
+}
+
+function SetZombieSpawnModel()
+{
+    while(!IsAlive(self))
+        wait 0.1;
+    
+    self.savedModel = self.model;
+
+    if(IsDefined(level.ZombieModel))
+        self SetModel(level.ZombieModel);
+}
+
+function DisableZombieModel()
+{
+    level.ZombieModel = undefined;
+    spawner::remove_global_spawn_function("zombie", &SetZombieSpawnModel);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(IsDefined(zombies) && zombies.size)
+    {
+        foreach(zombie in zombies)
+        {
+            if(IsDefined(zombie) && IsAlive(zombie) && IsDefined(zombie.savedModel))
+                zombie SetModel(zombie.savedModel);
+        }
+    }
+}
+
+function ZombieGibBone(bone)
+{
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
+            continue;
+        
+        switch(bone)
+        {
+            case "Random":
+                switch(RandomInt(5))
+                {
+                    case 0:
+                        zombies[a] thread zombie_utility::zombie_head_gib();
+                        break;
+                    
+                    case 1:
+                        thread gibserverutils::gibrightleg(zombies[a]);
+                        break;
+                    
+                    case 2:
+                        thread gibserverutils::gibleftleg(zombies[a]);
+                        break;
+                    
+                    case 3:
+                        thread gibserverutils::gibrightarm(zombies[a]);
+                        break;
+                    
+                    case 4:
+                        thread gibserverutils::gibleftarm(zombies[a]);
+                        break;
+                    
+                    default:
+                        zombies[a] thread zombie_utility::zombie_head_gib();
+                        break;
+                }
+                break;
+            
+            case "Head":
+                zombies[a] thread zombie_utility::zombie_head_gib();
+                break;
+            
+            case "Right Leg":
+                thread gibserverutils::gibrightleg(zombies[a]);
+                break;
+            
+            case "Left Leg":
+                thread gibserverutils::gibleftleg(zombies[a]);
+                break;
+            
+            case "Right Arm":
+                thread gibserverutils::gibrightarm(zombies[a]);
+                break;
+            
+            case "Left Arm":
+                thread gibserverutils::gibleftarm(zombies[a]);
+                break;
+            
+            default:
+                zombies[a] thread zombie_utility::zombie_head_gib();
+                break;
+        }
+    }
+}
+
+function KillZombies(type = "Death")
+{
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
+            continue;
+        
+        switch(type)
+        {
+            case "Death":
+                zombies[a] DoDamage((zombies[a].health + 666), zombies[a].origin);
+                break;
+            
+            case "Head Gib":
+                zombies[a] thread ZombieHeadGib();
+                break;
+            
+            case "Flame":
+                zombies[a] thread zombie_death::flame_death_fx();
+
+                if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+                    zombies[a] DoDamage((zombies[a].health + 666), zombies[a].origin);
+                break;
+            
+            case "Delete":
+                zombies[a] Delete();
+                break;
+            
+            default:
+                break;
+        }
+    }
+}
+
+function ZombieHeadGib()
+{
+    if(!IsDefined(self) || !IsAlive(self))
+        return;
+
+    self endon("death");
+
+    self clientfield::set("zm_bgb_mind_ray_fx", 1);
+    wait RandomFloatRange(0.65, 2.5);
+
+    self clientfield::set("zm_bgb_mind_pop_fx", 1);
+    self PlaySoundOnTag("zmb_bgb_mindblown_pop", "tag_eye");
+    self zombie_utility::zombie_head_gib();
+    wait 0.1;
+
+    if(IsDefined(self) && IsAlive(self))
+        self DoDamage((self.health + 666), self.origin);
+}
+
+function SetZombieHealth(type)
+{
+    switch(type)
+    {
+        case "Custom":
+            self thread NumberPad(&SetZombieSpawnHealth);
+            break;
+        
+        case "Reset":
+            spawner::remove_global_spawn_function("zombie", &EditZombieHealth);
+            level SetZombieHealth1(GetZombieHealthFromRound(level.round_number));
+            break;
+        
+        default:
+            break;
+    }
+}
+
+function SetZombieSpawnHealth(health)
+{
+    spawner::remove_global_spawn_function("zombie", &EditZombieHealth);
+    wait 0.1;
+
+    zombies = GetAITeamArray(level.zombie_team);
+    
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || IsDefined(zombies[a].maxhealth) && zombies[a].maxhealth == health)
+            continue;
+        
+        zombies[a] thread EditZombieHealth(health);
+    }
+
+    //This will only apply to zombies that haven't spawned yet. The code above, will set the health of zombies that have already been spawned
+    spawner::add_archetype_spawn_function("zombie", &EditZombieHealth, health);
+}
+
+function EditZombieHealth(health)
+{
+    while(!IsDefined(self.maxhealth) && IsDefined(self) && IsAlive(self))
+        wait 0.1;
+    
+    if(IsDefined(self) && IsAlive(self))
+    {
+        self.maxhealth = health;
+        self.health = health;
+    }
+}
+
+function GetZombieHealthFromRound(round_number)
+{
+    zombie_health = level.zombie_vars["zombie_health_start"];
+
+    for(a = 2; a <= round_number; a++)
+    {
+        if(a >= 10)
+        {
+            old_health = zombie_health;
+            zombie_health = zombie_health + (Int(zombie_health * level.zombie_vars["zombie_health_increase_multiplier"]));
+
+            if(zombie_health < old_health)
+                return old_health;
+        }
+        else
+        {
+            zombie_health = Int(zombie_health + level.zombie_vars["zombie_health_increase"]);
+        }
+    }
+
+    return zombie_health;
+}
+
+function SetZombieHealth1(health)
+{
+    level.zombie_health = health;
+    zombies = GetAITeamArray(level.zombie_team);
+    
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || IsDefined(zombies[a].maxhealth) && zombies[a].maxhealth == health)
+            continue;
+        
+        zombies[a].maxhealth = health;
+        zombies[a].health = zombies[a].maxhealth;
+    }
+}
+
+function SetZombieRunSpeed(speed)
+{
+    speed = ToLower(speed);
+
+    if(speed == "super sprint")
+        speed = "super_sprint";
+
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+            zombies[a] zombie_utility::set_zombie_run_cycle(speed);
+    }
+}
+
+function KnockdownZombies(dir)
+{
+    switch(dir)
+    {
+        case "Back":
+            knockDir = "front";
+            upDir = "getup_back";
+            break;
+        
+        case "Front":
+            knockDir = "back";
+            upDir = "getup_belly";
+            break;
+    }
+
+    if(!IsDefined(knockDir) || !IsDefined(upDir))
+        return;
+
+    zombies = GetAITeamArray(level.zombie_team);
+    
+    foreach(zombie in zombies)
+    {
+        if(!IsDefined(zombie) || !IsAlive(zombie) || zombie.missinglegs || Is_True(zombie.knockdown))
+            continue;
+        
+        zombie.knockdown = 1;
+        zombie.knockdown_direction = knockDir;
+        zombie.getup_direction = upDir;
+        zombie.knockdown_type = "knockdown_shoved";
+
+        BlackBoardAttribute(zombie, "_knockdown_direction", zombie.knockdown_direction);
+        BlackBoardAttribute(zombie, "_knockdown_type", zombie.knockdown_type);
+        BlackBoardAttribute(zombie, "_getup_direction", zombie.getup_direction);
+    }
+}
+
+function PushZombies(dir)
+{
+    zombies = GetAITeamArray(level.zombie_team);
+    
+    foreach(zombie in zombies)
+    {
+        if(!IsDefined(zombie) || !IsAlive(zombie) || zombie.missinglegs || Is_True(zombie.pushed))
+            continue;
+        
+        zombie.pushed = 1;
+        zombie.push_direction = ToLower(dir);
+
+        BlackBoardAttribute(zombie, "_push_direction", zombie.push_direction);
+    }
+}
+
+function BlackBoardAttribute(entity, attributename, attributevalue)
+{
+    if(!IsDefined(entity) || !IsDefined(entity.__blackboard))
+        return;
+    
+    if(IsDefined(entity.__blackboard[attributename]))
+    {
+        if(!IsDefined(attributevalue) && IsFunctionPtr(entity.__blackboard[attributename]))
+            return;
+    }
+
+    entity.__blackboard[attributename] = attributevalue;
+}
+
+function TeleportZombies(loc)
+{
+    origin = ((IsString(loc) && loc == "Crosshairs") ? self TraceBullet() : self.origin);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+        {
+            zombies[a] StopAnimScripted(0);
+            zombies[a] ForceTeleport(origin);
+            zombies[a].find_flesh_struct_string = "find_flesh";
+            zombies[a].ai_state = "find_flesh";
+            zombies[a] notify("zombie_custom_think_done", "find_flesh");
+        }
+    }
+}
+
+function SetZombieAnimationSpeed(rate)
+{
+    spawner::remove_global_spawn_function("zombie", &ZombieAnimationWait);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(IsDefined(zombies) && zombies.size)
+    {
+        for(a = 0; a < zombies.size; a++)
+        {
+            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]))
+                continue;
+            
+            if(rate != 1)
+                zombies[a] thread ZombieAnimationWait(rate);
+            else
+                zombies[a] ASMSetAnimationRate(rate);
+        }
+    }
+
+    if(rate != 1)
+        spawner::add_archetype_spawn_function("zombie", &ZombieAnimationWait, rate);
+}
+
+function ZombieAnimationWait(rate)
+{
+    while(!CanControl(self) && IsAlive(self))
+        wait 0.1;
+    
+    if(IsDefined(self) && IsAlive(self))
+        self ASMSetAnimationRate(rate);
+}
+
+function ZombiesToCrosshairsLoop()
+{
+    level.ZombiesToCrosshairsLoop = BoolVar(level.ZombiesToCrosshairsLoop);
+
+    if(Is_True(level.ZombiesToCrosshairsLoop))
+    {
+        origin = self TraceBullet();
+
+        while(Is_True(level.ZombiesToCrosshairsLoop))
+        {
+            zombies = GetAITeamArray(level.zombie_team);
+
+            for(a = 0; a < zombies.size; a++)
+            {
+                if(IsDefined(zombies[a]) && IsAlive(zombies[a]) && IsActor(zombies[a]))
+                {
+                    zombies[a] StopAnimScripted(0);
+                    zombies[a] ForceTeleport(origin);
+                }
+            }
+
+            wait 0.05;
+        }
+    }
+}
+
+function DisableZombieCollision()
+{
+    level.DisableZombieCollision = BoolVar(level.DisableZombieCollision);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(Is_True(level.DisableZombieCollision))
+        spawner::add_archetype_spawn_function("zombie", &DisableZombieSpawnCollision);
+    else
+        spawner::remove_global_spawn_function("zombie", &DisableZombieSpawnCollision);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+            zombies[a] SetPlayerCollision(!Is_True(level.DisableZombieCollision));
+    }
+}
+
+function DisableZombieSpawnCollision()
+{
+    while(!IsAlive(self))
+        wait 0.1;
+    
+    self SetPlayerCollision(0);
+}
+
+function DisableZombieSpawning()
+{
+    SetDvar("ai_disableSpawn", ((GetDvarString("ai_disableSpawn") == "0") ? "1" : "0"));
+    KillZombies("Head Gib");
+}
+
+function DisableZombiePush()
+{
+    level.DisableZombiePush = BoolVar(level.DisableZombiePush);
+
+    if(Is_True(level.DisableZombiePush))
+    {
+        while(Is_True(level.DisableZombiePush))
+        {
+            foreach(player in level.players)
+                player SetClientPlayerPushAmount(0);
+
+            wait 0.1;
+        }
+    }
+    else
+    {
+        foreach(player in level.players)
+            player SetClientPlayerPushAmount(1);
+    }
+}
+
+function ZombiesInvisibility()
+{
+    level.ZombiesInvisibility = BoolVar(level.ZombiesInvisibility);
+
+    if(Is_True(level.ZombiesInvisibility))
+    {
+        while(Is_True(level.ZombiesInvisibility))
+        {
+            zombies = GetAITeamArray(level.zombie_team);
+
+            for(a = 0; a < zombies.size; a++)
+            {
+                if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+                    zombies[a] Hide();
+            }
+
+            wait 0.5;
+        }
+    }
+    else
+    {
+        zombies = GetAITeamArray(level.zombie_team);
+
+        for(a = 0; a < zombies.size; a++)
+        {
+            if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+                zombies[a] Show();
+        }
+    }
+}
+
+function FreezeZombies()
+{
+    SetDvar("g_ai", ((GetDvarString("g_ai") == "1") ? "0" : "1"));
+}
+
+function ZombieDeathSounds()
+{
+    level.ZombieDeathSounds = BoolVar(level.ZombieDeathSounds);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(Is_True(level.ZombieDeathSounds))
+        spawner::add_archetype_spawn_function("zombie", &ZombieDeathSound);
+    else
+        spawner::remove_global_spawn_function("zombie", &ZombieDeathSound);
+    
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+            zombies[a].bgb_tone_death = (Is_True(level.ZombieDeathSounds) ? true : undefined);
+    }
+}
+
+function ZombieDeathSound()
+{
+    if(!IsDefined(self))
+        return;
+    
+    self.bgb_tone_death = true;
+}
+
+function ZombieProjectileVomiting()
+{
+    level.ZombieProjectileVomiting = BoolVar(level.ZombieProjectileVomiting);
+
+    while(Is_True(level.ZombieProjectileVomiting))
+    {
+        zombies = GetAITeamArray(level.zombie_team);
+
+        for(a = 0; a < zombies.size; a++)
+        {
+            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || Is_True(zombies[a].ProjectileVomit))
+                continue;
+            
+            zombies[a] thread ZombieProjectileVomit();
+        }
+
+        wait 0.1;
+    }
+}
+
+function ZombieProjectileVomit()
+{
+    if(!IsDefined(self) || !IsAlive(self) || Is_True(self.ProjectileVomit))
+        return;
+    
+    self endon("death");
+    
+    self.ProjectileVomit = true;
+    self clientfield::increment("projectile_vomit", 1);
+    wait 6;
+
+    if(Is_True(self.ProjectileVomit))
+        self.ProjectileVomit = BoolVar(self.ProjectileVomit);
+}
+
+function DisappearingZombies()
+{
+    level.DisappearingZombies = BoolVar(level.DisappearingZombies);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(Is_True(level.DisappearingZombies))
+    {
+        spawner::add_archetype_spawn_function("zombie", &ZombieSpawnDisappearingZombie);
+    }
+    else
+    {
+        spawner::remove_global_spawn_function("zombie", &ZombieSpawnDisappearingZombie);
+        level notify("EndDisappearingZombies");
+    }
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+        {
+            if(Is_True(level.DisappearingZombies))
+            {
+                zombies[a] thread DisappearingZombie();
+            }
+            else
+            {
+                if(Is_True(zombies[a].disappearing))
+                    zombies[a].disappearing = BoolVar(zombies[a].disappearing);
+
+                if(!Is_True(level.ZombiesInvisibility))
+                    zombies[a] Show();
+                else
+                    zombies[a] Hide();
+            }
+        }
+    }
+}
+
+function ZombieSpawnDisappearingZombie()
+{
+    while(!IsAlive(self))
+        wait 0.1;
+    
+    self thread DisappearingZombie();
+}
+
+function DisappearingZombie()
+{
+    if(Is_True(self.disappearing))
+        return;
+    self.disappearing = true;
+
+    if(!IsDefined(self) || !IsAlive(self))
+        return;
+    
+    level endon("EndDisappearingZombies");
+    
+    while(IsDefined(self) && IsAlive(self))
+    {
+        self Hide();
+        wait RandomFloatRange(1, 5);
+
+        if(IsDefined(self) && IsAlive(self))
+            self Show();
+        
+        wait RandomFloatRange(1, 5);
+    }
+}
+
+function ExplodingZombies()
+{
+    level.ExplodingZombies = BoolVar(level.ExplodingZombies);
+
+    if(Is_True(level.ExplodingZombies))
+    {
+        while(Is_True(level.ExplodingZombies))
+        {
+            zombies = GetAITeamArray(level.zombie_team);
+
+            for(a = 0; a < zombies.size; a++)
+            {
+                if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || Is_True(zombies[a].explodingzombie))
+                    continue;
+                
+                zombies[a].explodingzombie = true;
+                zombies[a] clientfield::set("arch_actor_fire_fx", 1);
+                zombies[a] thread ZombieBurnPlayers();
+            }
+            
+            wait 0.01;
+        }
+    }
+    else
+    {
+        zombies = GetAITeamArray(level.zombie_team);
+
+        for(a = 0; a < zombies.size; a++)
+        {
+            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || !Is_True(zombies[a].explodingzombie))
+                continue;
+            
+            zombies[a] clientfield::set("arch_actor_fire_fx", 0);
+            zombies[a].explodingzombie = BoolVar(zombies[a].explodingzombie);
+
+            if(Is_True(zombies[a].burnplayers))
+                zombies[a].burnplayers = BoolVar(zombies[a].burnplayers);
+        }
+    }
+}
+
+function ZombieBurnPlayers()
+{
+    if(Is_True(self.burnplayers))
+        return;
+    self.burnplayers = true;
+
+    self endon("death");
+
+    while(IsAlive(self) && Is_True(level.ExplodingZombies))
+    {
+        foreach(player in GetPlayers())
+        {
+            if(DistanceSquared(player.origin, self.origin) <= 9216 && !Is_True(player.is_burning) && zombie_utility::is_player_valid(player, 0))
+                player function_3389e2f3(self);
+        }
+
+        wait 0.1;
+    }
+}
+
+function ZombieRagdoll()
+{
+    level.ZombieRagdoll = BoolVar(level.ZombieRagdoll);
+}
+
+function StackZombies()
+{
+    level endon("EndStackZombies");
+    
+    level.StackZombies = BoolVar(level.StackZombies);
+
+    if(Is_True(level.StackZombies))
+    {
+        while(Is_True(level.StackZombies))
+        {
+            zombies = GetAITeamArray(level.zombie_team);
+
+            for(a = 0; a < zombies.size; a++)
+            {
+                if(!CanControl(zombies[a]) || Is_True(zombies[a].stacked))
+                    continue;
+                
+                tag = "tag_origin"; //Had to choose a tag that doesn't move/rotate
+                tagCheck = zombies[a] GetTagOrigin(tag); //Gonna be used to make sure it's a valid tag for the ai
+                offset = (0, 0, 70); //(x, y, z) offset for the given tag
+
+                if(!IsDefined(tagCheck))
+                {
+                    tag = "tag_body"; //Backup tag for ai that don't have the default tag given
+                    tagCheck = zombies[a] GetTagOrigin(tag);
+                }
+
+                if(!IsDefined(tagCheck)) //If the backup tag can't be used for the AI, then it will be skipped
+                    continue;
+                
+                bottom = zombies[a];
+                top = undefined;
+
+                for(b = 0; b < zombies.size; b++)
+                {
+                    if(!CanControl(zombies[b]) || Is_True(zombies[b].stacked) || IsDefined(zombies[b]) && zombies[b] == bottom)
+                        continue;
+                    
+                    top = zombies[b];
+                    break;
+                }
+
+                if(IsDefined(bottom) && IsDefined(top))
+                {
+                    top LinkTo(bottom, tag, offset);
+                    bottom thread StackedZombieWatcher(top);
+
+                    top.stacked = true;
+                    bottom.stacked = true;
+                }
+            }
+
+            wait 1;
+        }
+    }
+    else
+    {
+        zombies = GetAITeamArray(level.zombie_team);
+
+        for(a = 0; a < zombies.size; a++)
+        {
+            if(!IsDefined(zombies[a]) || !IsAlive(zombies[a]) || !Is_True(zombies[a].stacked))
+                continue;
+            
+            zombies[a] Unlink();
+
+            if(Is_True(zombies[a].stacked))
+                zombies[a].stacked = BoolVar(zombies[a].stacked);
+        }
+
+        level notify("EndStackZombies");
+    }
+}
+
+function StackedZombieWatcher(top)
+{
+    if(!IsDefined(self) || !IsAlive(self) || !IsDefined(top) || !IsAlive(top))
+        return;
+    
+    level endon("EndStackZombies");
+    top endon("death");
+
+    self waittill("death");
+
+    if(IsDefined(top) && IsAlive(top))
+    {
+        top Unlink();
+
+        if(Is_True(top.stacked))
+            top.stacked = BoolVar(top.stacked);
+    }
+}
+
+function RemoveZombieEyes()
+{
+    level.RemoveZombieEyes = BoolVar(level.RemoveZombieEyes);
+    zombies = GetAITeamArray(level.zombie_team);
+
+    if(Is_True(level.RemoveZombieEyes))
+    {
+        spawner::add_archetype_spawn_function("zombie", &ZombieSpawnNoEyes);
+
+        foreach(zombie in zombies)
+        {
+            if(!IsDefined(zombie) || !IsAlive(zombie) || Is_True(zombie.no_eye_glow))
+                continue;
+            
+            zombie clientfield::set("zombie_has_eyes", 0);
+            zombie.no_eye_glow = true;
+        }
+    }
+    else
+    {
+        spawner::remove_global_spawn_function("zombie", &ZombieSpawnNoEyes);
+
+        foreach(zombie in zombies)
+        {
+            if(!IsDefined(zombie) || !IsAlive(zombie) || !Is_True(zombie.no_eye_glow))
+                continue;
+            
+            zombie clientfield::set("zombie_has_eyes", 1);
+            zombie.no_eye_glow = false;
+        }
+    }
+}
+
+function ZombieSpawnNoEyes()
+{
+    if(Is_True(self.no_eye_glow))
+        return;
+    
+    self clientfield::set("zombie_has_eyes", 0);
+    self.no_eye_glow = true;
+}
+
+function BodiesFloat()
+{
+    SetDvar("phys_gravity_dir", ((GetDvarVector("phys_gravity_dir") == (0, 0, -1)) ? (0, 0, 1) : (0, 0, -1)));
+}
+
+function ForceZombieCrawlers()
+{
+    zombies = GetAITeamArray(level.zombie_team);
+
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+            zombies[a] zombie_utility::makezombiecrawler(true);
+    }
+}
+
+function DetachZombieHeads()
+{
+    zombies = GetAITeamArray(level.zombie_team);
+    
+    for(a = 0; a < zombies.size; a++)
+    {
+        if(IsDefined(zombies[a]) && IsAlive(zombies[a]))
+            zombies[a] DetachAll();
+    }
+}
+
+function ServerClearCorpses()
+{
+    corpse_array = GetCorpseArray();
+
+    if(IsDefined(corpse_array) && corpse_array.size)
+    {
+        for(a = 0; a < corpse_array.size; a++)
+        {
+            if(IsDefined(corpse_array[a]))
+                corpse_array[a] Delete();
+        }
+    }
+}
+
+// ============================================================
+// Menu/base.gsc
+// ============================================================
+
+#define OPT_NAME 0
+#define OPT_FUNC 1
+#define OPT_IN1 2
+#define OPT_IN2 3
+#define OPT_IN3 4
+#define OPT_IN4 5
+#define OPT_BOOL 6
+#define OPT_BOOLOPT 7
+#define OPT_SHADER 8
+#define OPT_COLOR 9
+#define OPT_INCSLIDER 10
+#define OPT_MIN 11
+#define OPT_MAX 12
+#define OPT_START 13
+#define OPT_INCREMENT 14
+#define OPT_SLIDER 15
+#define OPT_SLIDERVALUES 16
+
+function menuMonitor()
+{
+    if(Is_True(self.menuMonitor))
+        return;
+    self.menuMonitor = true;
+
+    self endon("endMenuMonitor");
+    self endon("disconnect");
+
+    while(1)
+    {
+        if(self hasMenu() && !Is_True(self.DisableMenuControls))
+        {
+            if(!self isInMenu(true))
+            {
+                self.menuUI = [];
+                
+                if(self AreButtonsPressed(self.OpenControls) && Is_Alive(self))
+                {
+                    self openMenu1();
+                    wait 0.5;
+                }
+                else if(Is_Alive(self) && self AreButtonsPressed(self.QuickControls) || !Is_Alive(self) && self AdsButtonPressed() && self JumpButtonPressed())
+                {
+                    if(!Is_True(self.DisableQM))
+                    {
+                        self openQuickMenu1();
+                        wait 0.5;
+                    }
+                }
+            }
+            else
+            {
+                if(self isInMenu(false) && !Is_Alive(self))
+                    self closeMenu1();
+                
+                if(ReturnMapName() != "Origins")
+                    self SetActionSlot(3, "");
+                
+                self SetActionSlot(1, "");
+
+                if(Is_True(self.MenuNoTarget))
+                    self.ignoreme = true;
+
+                menu = self getCurrent();
+                curs = self getCursor();
+
+                if((self AdsButtonPressed() || self ActionSlotOneButtonPressed()) && !(self AttackButtonPressed() || self ActionSlotTwoButtonPressed()) || (self AttackButtonPressed() || self ActionSlotTwoButtonPressed()) && !(self AdsButtonPressed() || self ActionSlotOneButtonPressed()))
+                {
+                    dir = ((self AdsButtonPressed() || self ActionSlotOneButtonPressed()) ? -1 : 1);
+
+                    self setCursor(curs + dir);
+                    self ScrollingSystem(dir, curs);
+
+                    wait (self.ScrollAnimationTime + 0.025);
+                }
+                else if(self UseButtonPressed())
+                {
+                    if(IsDefined(self.menuStructure) && IsDefined(self.menuStructure[curs]) && IsDefined(self GetOption(curs, OPT_FUNC)))
+                    {
+                        optSlider = self GetOption(curs, OPT_SLIDER);
+                        optIncSlider = self GetOption(curs, OPT_INCSLIDER);
+                        sliderValues = self GetOption(curs, OPT_SLIDERVALUES);
+
+                        if(Is_True(optSlider) || Is_True(optIncSlider))
+                        {
+                            self ExeFunction(self GetOption(curs, OPT_FUNC), (Is_True(optSlider) ? sliderValues[self.menuSlider[menu][curs]] : self.menuSlider[menu][curs]), self GetOption(curs, OPT_IN1), self GetOption(curs, OPT_IN2), self GetOption(curs, OPT_IN3), self GetOption(curs, OPT_IN4));
+                        }
+                        else
+                        {
+                            self ExeFunction(self GetOption(curs, OPT_FUNC), self GetOption(curs, OPT_IN1), self GetOption(curs, OPT_IN2), self GetOption(curs, OPT_IN3), self GetOption(curs, OPT_IN4));
+                            boolOpt = self GetOption(curs, OPT_BOOLOPT);
+
+                            if(IsDefined(self.menuStructure) && IsDefined(self.menuStructure[curs]) && Is_True(boolOpt))
+                            {
+                                wait 0.18;
+                                self RefreshMenu(menu, curs);
+                            }
+                        }
+
+                        wait 0.2;
+                    }
+                }
+                else if(self ActionslotThreeButtonPressed() && !self ActionSlotFourButtonPressed() || self ActionslotFourButtonPressed() && !self ActionSlotThreeButtonPressed())
+                {
+                    optSlider = self GetOption(curs, OPT_SLIDER);
+                    optIncSlider = self GetOption(curs, OPT_INCSLIDER);
+                    
+                    if(IsDefined(self.menuStructure) && (Is_True(optSlider) || Is_True(optIncSlider)))
+                    {
+                        dir = (self ActionslotThreeButtonPressed() ? -1 : 1);
+
+                        if(Is_True(optSlider))
+                            self SetSlider(dir);
+                        else
+                            self SetIncSlider(dir);
+                        
+                        wait 0.13;
+                    }
+                }
+                else if(self MeleeButtonPressed() || !Is_Alive(self) && self JumpButtonPressed())
+                {
+                    if(menu == "Main" || menu == "Quick Menu")
+                    {
+                        if(self isInQuickMenu())
+                            self closeQuickMenu();
+                        else
+                            self closeMenu1();
+                    }
+                    else
+                    {
+                        if(Is_True(self.QuickExit))
+                        {
+                            goal = 10;
+                            count = 0;
+
+                            while(self MeleeButtonPressed())
+                            {
+                                count++;
+
+                                if(count >= goal)
+                                    break;
+                                
+                                wait 0.01;
+                            }
+
+                            if(count >= goal)
+                            {
+                                if(self isInQuickMenu())
+                                    self closeQuickMenu();
+                                else
+                                    self closeMenu1();
+                            }
+                            else
+                            {
+                                self newMenu();
+                            }
+                        }
+                        else
+                        {
+                            self newMenu();
+                        }
+                    }
+
+                    wait 0.2;
+                }
+            }
+        }
+
+        wait 0.05;
+    }
+}
+
+function ExeFunction(fnc, i1, i2, i3, i4, i5, i6)
+{
+    self endon("disconnect");
+
+    if(!IsDefined(fnc))
+        return;
+    
+    if(IsDefined(i6))
+        return self thread [[ fnc ]](i1, i2, i3, i4, i5, i6);
+    
+    if(IsDefined(i5))
+        return self thread [[ fnc ]](i1, i2, i3, i4, i5);
+    
+    if(IsDefined(i4))
+        return self thread [[ fnc ]](i1, i2, i3, i4);
+    
+    if(IsDefined(i3))
+        return self thread [[ fnc ]](i1, i2, i3);
+    
+    if(IsDefined(i2))
+        return self thread [[ fnc ]](i1, i2);
+    
+    if(IsDefined(i1))
+        return self thread [[ fnc ]](i1);
+
+    return self thread [[ fnc ]]();
+}
+
+function openMenu1(showAnim = true)
+{
+    self endon("disconnect");
+
+    self.isInMenu = true;
+    wait 0.05;
+
+    if(!IsDefined(self.currentMenu) || self.currentMenu == "")
+        self.currentMenu = "Main";
+    
+    if(!IsDefined(self.menu_parent))
+        self.menu_parent = [];
+
+    if(isInArray(self.menu_parent, "Players") && IsDefined(self.SavedSelectedPlayer))
+        self.SelectedPlayer = self.SavedSelectedPlayer;
+
+    self createMenuHud();
+    self drawText(showAnim);
+
+    if(self getCurrent() == "Players" && !Is_True(self.PlayerInfoHandler))
+        self thread PlayerInfoHandler();
+}
+
+function closeMenu1(showAnim = false)
+{
+    self endon("disconnect");
+
+    if(self isInQuickMenu())
+    {
+        self closeQuickMenu();
+        return;
+    }
+
+    if(!self isInMenu())
+        return;
+    
+    self notify("menuClosed");
+    self.CreditsPlaying = undefined;
+
+    destroyAll(self.menuUI);
+    self.menuUI = undefined;
+    self.menuStructure = undefined;
+
+    if(Is_True(self.isInMenu))
+        self.isInMenu = BoolVar(self.isInMenu);
+
+    self.DisableMenuControls = undefined;
+
+    if(ReturnMapName() != "Origins")
+        self SetActionSlot(3, "altMode");
+    
+    if(IsDefined(self.bgb) && self.bgb != "none")
+        self SetActionSlot(1, "bgb");
+    
+    if(!Is_True(self.playerIgnoreMe) && Is_True(self.MenuNoTarget))
+        self.ignoreme = false;
+}
+
+function openQuickMenu1()
+{
+    self endon("disconnect");
+
+    self.isInQuickMenu = true;
+    self.SelectedPlayer = self;
+
+    if(!IsDefined(self.menu_parentQM))
+        self.menu_parentQM = [];
+
+    if(!IsDefined(self.currentMenuQM))
+        self.currentMenuQM = "Quick Menu";
+    
+    self createMenuHud();
+    self drawText(true);
+}
+
+function closeQuickMenu()
+{
+    if(!self isInQuickMenu())
+        return;
+    
+    self endon("disconnect");
+
+    destroyAll(self.menuUI);
+    self.menuUI = undefined;
+    self.menuStructure = undefined;
+
+    if(Is_True(self.isInQuickMenu))
+        self.isInQuickMenu = BoolVar(self.isInQuickMenu);
+    
+    self.DisableMenuControls = undefined;
+
+    if(ReturnMapName() != "Origins")
+        self SetActionSlot(3, "altMode");
+    
+    if(IsDefined(self.bgb) && self.bgb != "none")
+        self SetActionSlot(1, "bgb");
+    
+    if(!Is_True(self.playerIgnoreMe) && Is_True(self.MenuNoTarget))
+        self.ignoreme = false;
+}
+
+function drawText(showAnim = false)
+{
+    self endon("menuClosed");
+    self endon("disconnect");
+
+    self DestroyOpts();
+    self RunMenuOptions(self getCurrent());
+    self SetMenuTitle();
+
+    if(!IsDefined(self.menuStructure) || !self.menuStructure.size)
+        self addOpt("No Options Found");
+    
+    cursor = self getCursor();
+    maxOptions = self GetMaxOptions();
+    
+    if(!IsDefined(cursor))
+        self setCursor(0);
+    
+    if(self getCursor() >= self.menuStructure.size)
+        self setCursor((self.menuStructure.size - 1));
+    
+    hud = Array("text", "subMenu", "BoolOpt", "BoolBack", "BoolText", "IntSlider", "StringSlider", "invalidOption");
+    numOpts = ((self.menuStructure.size > maxOptions) ? maxOptions : self.menuStructure.size);
+    start = self GetScrollStart(self getCursor());
+
+    for(a = 0; a < hud.size; a++)
+    {
+        if(!IsDefined(self.menuUI[hud[a]]))
+            self.menuUI[hud[a]] = [];
+    }
+
+    offset = ((self.MenuDesign == "Classic") ? 11 : ((self.MenuDesign == "AIO") ? 15 : ((self.MenuDesign == "Basic") ? 30 : 8)));
+    startY = (self.menuUI["background"].y + offset);
+
+    for(a = 0; a < numOpts; a++)
+    {
+        self createOption((start + a), (startY + (a * 18)), ((start + a) == self getCursor()), showAnim);
+
+        if(Is_True(showAnim))
+        {
+            for(b = 0; b < hud.size; b++)
+            {
+                if(!IsDefined(self.menuUI[hud[b]]) || !self.menuUI[hud[b]].size || !IsDefined(self.menuUI[hud[b]][(start + a)]))
+                    continue;
+                
+                self.menuUI[hud[b]][(start + a)] thread hudFade(((Is_True(self.SpotlightCursor) && ((start + a) != self getCursor())) ? 0.4 : 1), (a * 0.1));
+            }
+        }
+    }
+
+    if(!IsDefined(self.menuUI["text"][self getCursor()]))
+        self.menuCursor[self getCurrent()] = (self.menuStructure.size - 1);
+    
+    if(IsDefined(self.menuUI["scroller"]) && IsDefined(self.menuUI["text"][self getCursor()]))
+    {
+        scrollOffset = ((self.MenuDesign == "AIO") ? 11 : 8);
+        self.menuUI["scroller"].y = (self.menuUI["text"][self getCursor()].y - scrollOffset);
+
+        if(IsDefined(self.menuUI["cursIndex"]))
+        {
+            self.menuUI["cursIndex"] SetValue(self getCursor() + 1);
+            self.menuUI["optCount"] SetValue(self.menuStructure.size);
+
+            if(IsDefined(self.menuUI["cursIndex"]))
+            {
+                posOffset = ((self.menuStructure.size >= 10) ? 16 : 12);
+
+                self.menuUI["counterSep"].x = self.menuUI["background"].x + (self.menuUI["background"].width - posOffset);
+                self.menuUI["cursIndex"].x = self.menuUI["counterSep"].x - 3;
+                self.menuUI["optCount"].x = self.menuUI["counterSep"].x + 3;
+            }
+        }
+    }
+
+    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["text"]) && self.menuUI["text"].size)
+    {
+        heightOffset = ((self.MenuDesign == "Classic") ? 25 : ((self.MenuDesign == "AIO") ? 31 : ((self.MenuDesign == "Basic") ? 40 : 18)));
+
+        if(IsDefined(self.menuUI["background"]))
+            self.menuUI["background"] SetShaderValues(undefined, undefined, (heightOffset + (18 * (self.menuUI["text"].size - 1))));
+
+        if(IsDefined(self.menuUI["banner"]) && (self.MenuDesign == GetMenuName() || self.MenuDesign == "Classic"))
+        {
+            bannerOffset = ((self.MenuDesign == GetMenuName()) ? 35 : 14);
+            self.menuUI["banner"] SetShaderValues(undefined, undefined, bannerOffset + self.menuUI["background"].height);
+        }
+
+        if(IsDefined(self.menuUI["bottomLine"]))
+        {
+            self.menuUI["bottomLine"].y = (self.menuUI["background"].y + self.menuUI["background"].height);
+
+            if(IsDefined(self.menuUI["cursIndex"]))
+            {
+                self.menuUI["counterSep"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
+                self.menuUI["cursIndex"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
+                self.menuUI["optCount"].y = self.menuUI["bottomLine"].y + (self.menuUI["bottomLine"].height + 7);
+            }
+
+            if(self.MenuDesign == "AIO")
+            {
+                if(IsDefined(self.menuUI["menuName"]))
+                    self.menuUI["menuName"].y = (self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1));
+                
+                if(IsDefined(self.menuUI["backgroundouter"]))
+                    self.menuUI["backgroundouter"] SetShaderValues(undefined, undefined, (4 + (self.menuUI["background"].height + self.menuUI["separator"].height + self.menuUI["bottomLine"].height)));
+            }
+        }
+    }
+}
+
+function createOption(index = 0, optY = 0, selected = false, fadeIn = false)
+{
+    boolVal = self GetOption(index, OPT_BOOL);
+    boolOpt = self GetOption(index, OPT_BOOLOPT);
+    optName = self GetOption(index, OPT_NAME);
+    optFunc = self GetOption(index, OPT_FUNC);
+    optSlider = self GetOption(index, OPT_SLIDER);
+    optIncSlider = self GetOption(index, OPT_INCSLIDER);
+    sliderValues = self GetOption(index, OPT_SLIDERVALUES);
+
+    fontColor = ((!selected || self.MenuDesign == "Native" || self.MenuDesign == "Classic" || !Is_True(self.ColoredCursor)) ? (1, 1, 1) : self.MainTheme);
+    fontScale = ((Is_True(self.LargeCursor) && selected) ? 1.2 : 1);
+    alpha = (Is_True(fadeIn) ? 0 : ((Is_True(self.SpotlightCursor) && !selected) ? 0.4 : 1));
+    optX = (self.menuUI["background"].x + 4);
+
+    if(Is_True(boolOpt) && self.BoolDisplay != "Text Color")
+    {
+        if(self.BoolDisplay == "Boxes")
+        {
+            boxX = ((self.BoolLocation == "Left") ? (self.menuUI["background"].x + 9) : (self.menuUI["background"].x + (self.menuUI["background"].width - 8)));
+
+            self.menuUI["BoolBack"][index] = self createRectangle("CENTER", boxX, optY, 10, 10, (0.25, 0.25, 0.25), 5, alpha, "white");
+            self.menuUI["BoolOpt"][index] = self createRectangle("CENTER", boxX, optY, 8, 8, (Is_True(boolVal) ? self.MainTheme : (0, 0, 0)), 6, alpha, "white");
+            
+            if(self.BoolLocation == "Left")
+                optX = ((self.menuUI["BoolBack"][index].x + (self.menuUI["BoolBack"][index].width / 2)) + 4);
+        }
+        else
+        {
+            self.menuUI["BoolText"][index] = self createText("default", fontScale, 5, (Is_True(boolVal) ? "ON" : "OFF"), "RIGHT", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
+        }
+    }
+
+    if(IsDefined(optFunc) && optFunc == &newMenu)
+        self.menuUI["subMenu"][index] = self createText("default", fontScale, 5, ">", "RIGHT", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
+
+    if(Is_True(optIncSlider))
+        self.menuUI["IntSlider"][index] = self createText("default", fontScale, 5, self.menuSlider[self getCurrent()][index], "RIGHT", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
+
+    if(Is_True(optSlider))
+        self.menuUI["StringSlider"][index] = self createText("default", fontScale, 5, "< " + sliderValues[self.menuSlider[self getCurrent()][index]] + " > [" + (self.menuSlider[self getCurrent()][index] + 1) + "/" + sliderValues.size + "]", "RIGHT", (self.menuUI["background"].x + (self.menuUI["background"].width - 4)), optY, alpha, fontColor);
+
+    self.menuUI["text"][index] = self createText("default", fontScale, 5, optName, "LEFT", optX, optY, alpha, ((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : fontColor));
+
+    if(IsInvalidOption(optName))
+        self.menuUI["invalidOption"][index] = self createRectangle("CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width / 2)), optY, (self.MenuWidth - 60), 1, self.MainTheme, 5, 0.4, "white");
+}
+
+function ScrollingSystem(dir, OldCurs)
+{
+    self endon("menuClosed");
+    self endon("disconnect");
+
+    curs = self getCursor();
+    hud = Array("text", "BoolOpt", "BoolBack", "BoolText", "subMenu", "IntSlider", "StringSlider", "invalidOption");
+    size = self.menuStructure.size;
+    maxOptions = self GetMaxOptions();
+    time = self.ScrollAnimationTime;
+
+    if(curs < 0 || curs > (size - 1))
+    {
+        self setCursor(((curs < 0) ? (size - 1) : 0));
+
+        curs = self getCursor();
+        OldCurs = curs;
+
+        if(size > maxOptions)
+        {
+            self RefreshMenu();
+            return;
+        }
+    }
+    else
+    {
+        oldStart = self GetScrollStart(OldCurs);
+        newStart = self GetScrollStart(curs);
+
+        if(size > maxOptions && oldStart != newStart)
+        {
+            diff = (newStart - oldStart);
+
+            if(diff != 1 && diff != -1)
+            {
+                self RefreshMenu();
+                return;
+            }
+
+            scrollDown = (newStart > oldStart);
+            anchorRow = (scrollDown ? ((oldStart + maxOptions) - 1) : oldStart);
+
+            if(!IsDefined(self.menuUI["text"][anchorRow]))
+            {
+                self RefreshMenu();
+                return;
+            }
+
+            remove = (scrollDown ? oldStart : ((oldStart + maxOptions) - 1));
+            create = (scrollDown ? (oldStart + maxOptions) : (oldStart - 1));
+            optsStart = (scrollDown ? (oldStart + 1) : oldStart);
+            optsEnd = (scrollDown ? ((oldStart + maxOptions) - 1) : ((oldStart + maxOptions) - 2));
+            optY = self.menuUI["text"][anchorRow].y;
+
+            for(a = 0; a < hud.size; a++)
+            {
+                if(IsDefined(self.menuUI[hud[a]][remove]))
+                {
+                    if(time > 0)
+                        self.menuUI[hud[a]][remove] thread hudFadeDestroy(0, time);
+                    else
+                        self.menuUI[hud[a]][remove] DestroyHud();
+
+                    self.menuUI[hud[a]][remove] = undefined;
+                }
+            }
+
+            for(a = optsStart; a <= optsEnd; a++)
+            {
+                for(b = 0; b < hud.size; b++)
+                {
+                    if(!IsDefined(self.menuUI[hud[b]][a]) || Is_True(self.menuUI[hud[b]][a].fadeDestroy))
+                        continue;
+
+                    newY = (scrollDown ? (self.menuUI[hud[b]][a].y - 18) : (self.menuUI[hud[b]][a].y + 18));
+
+                    if(self.menuUI[hud[b]][a].y != newY)
+                        self.menuUI[hud[b]][a] thread hudMoveY(newY, time);
+                }
+            }
+
+            self createOption(create, optY, self getCursor() == create, true);
+            self HudArchiveState(newStart, maxOptions, hud);
+
+            for(a = 0; a < hud.size; a++)
+            {
+                if(IsDefined(self.menuUI[hud[a]][create]))
+                    self.menuUI[hud[a]][create] thread hudFade(((Is_True(self.SpotlightCursor) && create != curs || hud[a] == "invalidOption") ? 0.4 : 1), time);
+            }
+        }
+    }
+
+    if(IsDefined(self.menuStructure[curs]) && IsInvalidOption(self GetOption(curs, OPT_NAME)))
+    {
+        wait (time / 2);
+        self setCursor(curs + dir);
+
+        if(oldStart != newStart)
+        {
+            self RefreshMenu();
+            return;
+        }
+
+        return self ScrollingSystem(dir, curs);
+    }
+
+    for(a = 0; a < size; a++)
+    {
+        for(b = 0; b < hud.size; b++)
+        {
+            if(!IsDefined(self.menuUI[hud[b]][a]) || hud[b] == "invalidOption" || Is_True(self.menuUI[hud[b]][a].fadeDestroy))
+                continue;
+            
+            if(hud[b] != "BoolOpt" && hud[b] != "BoolBack")
+            {
+                boolVal = self GetOption(a, OPT_BOOL);
+                boolOpt = self GetOption(a, OPT_BOOLOPT);
+
+                self.menuUI[hud[b]][a] hudFadeColor(((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((curs != a || self.MenuDesign == "Native" || self.MenuDesign == "Classic" || !Is_True(self.ColoredCursor)) ? (1, 1, 1) : self.MainTheme)), time);
+                self.menuUI[hud[b]][a] ChangeFontscaleOverTime1(((Is_True(self.LargeCursor) && curs == a) ? 1.2 : 1), time);
+            }
+
+            self.menuUI[hud[b]][a] thread hudFade(((Is_True(self.SpotlightCursor) && a != curs || hud[b] == "invalidOption") ? 0.4 : 1), time);
+        }
+    }
+    
+    scrollOffset = ((self.MenuDesign == "AIO") ? 11 : 8);
+    scrollPos = (self.menuUI["text"][curs].y - scrollOffset);
+
+    if(IsDefined(self.menuUI["scroller"]) && IsDefined(self.menuUI["text"][curs]) && self.menuUI["scroller"].y != scrollPos)
+        self.menuUI["scroller"] thread hudMoveY(scrollPos, time);
+    
+    if(IsDefined(self.menuUI["cursIndex"]))
+        self.menuUI["cursIndex"] SetValue(curs + 1);
+}
+
+function HudArchiveState(start, maxOptions, hud)
+{
+    end = ((start + maxOptions) - 1);
+    count = self.hud_count;
+
+    for(a = start; a <= end; a++)
+    {
+        for(b = 0; b < hud.size; b++)
+        {
+            if(IsDefined(self.menuUI[hud[b]][a]) && !Is_True(self.menuUI[hud[b]][a].fadeDestroy))
+                count--;
+        }
+    }
+
+    if(count < 0)
+        count = 0;
+
+    newCount = count;
+
+    for(a = start; a <= end; a++)
+    {
+        for(b = 0; b < hud.size; b++)
+        {
+            if(!IsDefined(self.menuUI[hud[b]][a]) || Is_True(self.menuUI[hud[b]][a].fadeDestroy))
+                continue;
+
+            self.menuUI[hud[b]][a].archived = self ShouldArchive(newCount);
+            newCount++;
+        }
+    }
+}
+
+function GetScrollStart(cursor)
+{
+    if(!IsDefined(self.menuStructure) || !self.menuStructure.size)
+        return 0;
+
+    size = self.menuStructure.size;
+    maxOptions = self GetMaxOptions();
+
+    if(size <= maxOptions)
+        return 0;
+
+    sub = Int((maxOptions - 1) / 2);
+    add = Int((maxOptions + 1) / 2);
+
+    if(cursor <= sub)
+        return 0;
+
+    if(cursor >= (size - add))
+        return (size - maxOptions);
+
+    return (cursor - sub);
+}
+
+function SoftLockMenu(bgHeight = 100, hideScroller = false)
+{
+    if(!self hasMenu() || self hasMenu() && !self isInMenu())
+        return;
+
+    self endon("disconnect");
+
+    self.DisableMenuControls = true;
+    self DestroyOpts();
+
+    destroyHud = Array("counterSep", "cursIndex", "optCount");
+
+    for(a = 0; a < destroyHud.size; a++)
+    {
+        if(IsDefined(self.menuUI[destroyHud[a]]))
+            self.menuUI[destroyHud[a]] DestroyHud();
+    }
+
+    if(IsDefined(self.menuUI["scroller"]) && hideScroller)
+        self.menuUI["scroller"].alpha = 0;
+
+    if(IsDefined(self.menuUI["background"]))
+        self.menuUI["background"] SetShaderValues(undefined, self.MenuWidth, bgHeight);
+    
+    if(IsDefined(self.menuUI["banner"]) && (self.MenuDesign == GetMenuName() || self.MenuDesign == "Classic"))
+    {
+        bannerOffset = ((self.MenuDesign == GetMenuName()) ? 35 : 14);
+        self.menuUI["banner"] SetShaderValues(undefined, undefined, bannerOffset + self.menuUI["background"].height);
+    }
+
+    if(IsDefined(self.menuUI["bottomLine"]))
+        self.menuUI["bottomLine"].y = self.menuUI["background"].y + (self.menuUI["background"].height - 1);
+
+    if(self.MenuDesign == "AIO")
+    {
+        if(IsDefined(self.menuUI["menuName"]))
+            self.menuUI["menuName"].y = self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1);
+        
+        if(IsDefined(self.menuUI["backgroundouter"]))
+            self.menuUI["backgroundouter"] SetShaderValues(undefined, undefined, (3 + (self.menuUI["background"].height + self.menuUI["separator"].height + self.menuUI["bottomLine"].height)));
+    }
+}
+
+function SoftUnlockMenu()
+{
+    if(!self hasMenu() || !self isInMenu())
+        return;
+    
+    self endon("disconnect");
+    
+    self.CreditsPlaying = undefined;
+
+    self closeMenu1();
+    self.DisableMenuControls = true;
+
+    self openMenu1(false);
+    wait 0.1;
+
+    self.DisableMenuControls = undefined;
+}
+
+function SetMenuTitle(title)
+{
+    self endon("disconnect");
+
+    if(!IsDefined(self.menuUI["title"]))
+        return;
+
+    if(!IsDefined(title))
+        title = self.menuTitle;
+
+    self.menuUI["title"] SetTextString(title);
+}
+
+function RefreshMenu(menu, curs, force)
+{
+    self endon("disconnect");
+
+    if(IsDefined(menu) && !IsDefined(curs) || !IsDefined(menu) && IsDefined(curs))
+        return;
+    
+    if(IsDefined(menu) && IsDefined(curs))
+    {
+        foreach(player in level.players)
+        {
+            if(!IsDefined(player) || !IsDefined(player.menuUI) || !player hasMenu() || !player isInMenu(true) || Is_True(player.DisableMenuControls))
+                continue;
+            
+            if(player getCurrent() == menu || self != player && player PlayerHasOption(self, menu, curs))
+            {
+                if(IsDefined(player.menuUI["text"][curs]) || player == self && player getCurrent() == menu && IsDefined(player.menuUI["text"][curs]) || self != player && player PlayerHasOption(self, menu, curs) || IsDefined(force) && force)
+                    player drawText();
+            }
+        }
+    }
+    else
+    {
+        if(IsDefined(self) && self hasMenu() && self isInMenu(true) && !Is_True(self.DisableMenuControls))
+        {
+            self drawText();
+        }
+    }
+}
+
+function PlayerHasOption(source, menu, curs)
+{
+    option = source GetOption(curs, OPT_NAME);
+
+    if(IsDefined(self.menuStructure) && self.menuStructure.size && IsDefined(option))
+    {
+        for(a = 0; a < self.menuStructure.size; a++)
+        {
+            if(option == self GetOption(a, OPT_NAME) && (source.SelectedPlayer == self || self.SelectedPlayer == self && source.SelectedPlayer == source && self getCurrent() == menu))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+function DestroyOpts()
+{
+    self endon("disconnect");
+    
+    hud = Array("text", "BoolOpt", "BoolBack", "BoolText", "subMenu", "IntSlider", "StringSlider", "invalidOption");
+    
+    if(IsDefined(self.menuUI) && self.menuUI.size)
+    {
+        for(a = 0; a < hud.size; a++)
+        {
+            if(IsDefined(self.menuUI[hud[a]]) && self.menuUI[hud[a]].size)
+            {
+                destroyAll(self.menuUI[hud[a]]);
+                self.menuUI[hud[a]] = undefined;
+            }
+        }
+    }
+
+    self.menuStructure = undefined;
+}
+
+function IsInvalidOption(text)
+{
+    if(!IsDefined(text))
+        return true;
+    
+    if(!IsDefined(text.size)) //.size of localized string will be undefined -- Even if the string = "" the size should be 0
+        return false;
+    
+    if(text == "")
+        return true;
+    
+    for(a = 0; a < text.size; a++)
+    {
+        if(text[a] != " ")
+            return false;
+    }
+    
+    return true;
+}
+
+function BackMenu()
+{
+    if(!self isInQuickMenu())
+    {
+        if(IsDefined(self.menu_parent) && self.menu_parent.size)
+            return self.menu_parent[(self.menu_parent.size - 1)];
+        
+        return "Main";
+    }
+
+    if(IsDefined(self.menu_parentQM) && self.menu_parentQM.size)
+        return self.menu_parentQM[(self.menu_parentQM.size - 1)];
+    
+    return "Quick Menu";
+}
+
+function isInMenu(iqm)
+{
+    return Is_True(self.isInMenu) || Is_True(iqm) && Is_True(self.isInQuickMenu);
+}
+
+function isInQuickMenu()
+{
+    return Is_True(self.isInQuickMenu);
+}
+
+function getCurrent()
+{
+    if(!self isInMenu(true))
+        return;
+    
+    if(self isInQuickMenu())
+        return self.currentMenuQM;
+
+    return self.currentMenu;
+}
+
+function getCursor()
+{
+    if(!IsDefined(self.menuCursor))
+        return;
+    
+    if(!IsDefined(self.menuCursor[self getCurrent()]))
+        self.menuCursor[self getCurrent()] = 0;
+    
+    return self.menuCursor[self getCurrent()];
+}
+
+function setCursor(curs)
+{
+    if(!IsDefined(self.menuCursor))
+        self.menuCursor = [];
+    
+    self.menuCursor[self getCurrent()] = curs;
+}
+
+function SetSlider(dir)
+{
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    if(!IsDefined(self.menuSlider))
+        self.menuSlider = [];
+    
+    if(!IsDefined(self.menuSlider[menu]))
+        self.menuSlider[menu] = [];
+    
+    if(!IsDefined(self.menuSlider[menu][curs]))
+        self.menuSlider[menu][curs] = 0;
+
+    sliderValues = self GetOption(curs, OPT_SLIDERVALUES);
+
+    if(!IsDefined(sliderValues) || !sliderValues.size)
+        sliderValues = Array("invalid slider");
+
+    max = (sliderValues.size - 1);
+
+    self.menuSlider[menu][curs] += ((!IsDefined(dir) || !IsInt(dir) || dir > 0) ? 1 : -1);
+    
+    if((self.menuSlider[menu][curs] > max) || (self.menuSlider[menu][curs] < 0)) self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] > max) ? 0 : max);
+    
+    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["StringSlider"]) && IsDefined(self.menuUI["StringSlider"][curs]))
+        self.menuUI["StringSlider"][curs] SetTextString("< " + sliderValues[self.menuSlider[menu][curs]] + " > [" + (self.menuSlider[menu][curs] + 1) + "/" + sliderValues.size + "]");
+}
+
+function SetIncSlider(dir)
+{
+    menu = self getCurrent();
+    curs = self getCursor();
+
+    if(!IsDefined(self.menuSlider))
+        self.menuSlider = [];
+    
+    if(!IsDefined(self.menuSlider[menu]))
+        self.menuSlider[menu] = [];
+    
+    if(!IsDefined(self.menuSlider[menu][curs]))
+        self.menuSlider[menu][curs] = 0;
+    
+    val = self GetOption(curs, OPT_INCREMENT);
+    max = self GetOption(curs, OPT_MAX);
+    min = self GetOption(curs, OPT_MIN);
+    
+    if(self.menuSlider[menu][curs] < max && (self.menuSlider[menu][curs] + val) > max || (self.menuSlider[menu][curs] > min) && (self.menuSlider[menu][curs] - val) < min) self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] < max && (self.menuSlider[menu][curs] + val) > max) ? max : min);
+    else self.menuSlider[menu][curs] += ((!IsDefined(dir) || !IsInt(dir) || dir > 0) ? val : (val * -1));
+    
+    if((self.menuSlider[menu][curs] > max) || (self.menuSlider[menu][curs] < min)) self.menuSlider[menu][curs] = ((self.menuSlider[menu][curs] > max) ? min : max);
+    
+    if(IsDefined(self.menuUI) && IsDefined(self.menuUI["IntSlider"]) && IsDefined(self.menuUI["IntSlider"][curs]))
+        self.menuUI["IntSlider"][curs] SetValue(self.menuSlider[menu][curs]);
+}
+
+function newMenu(menu, dontSave, i1)
+{
+    self endon("disconnect");
+    self notify("EndSwitchWeaponMonitor");
+    self endon("menuClosed");
+
+    if(!IsDefined(self.menu_parent))
+        self.menu_parent = [];
+    
+    if(!IsDefined(self.menu_parentQM))
+        self.menu_parentQM = [];
+
+    if(self getCurrent() == "Players" && IsDefined(menu))
+    {
+        player = level.players[self getCursor()];
+
+        //This will make it so only the host developers can access the host's player options. Also, only the developers can access other developer's player options.
+        if(player IsHost() && !self IsHost() && !self isDeveloper() || player isDeveloper() && !self isDeveloper())
+            return self iPrintlnBold("^1ERROR: ^7Access Denied");
+
+        self.SelectedPlayer = player;
+        self.SavedSelectedPlayer = player; //Fix for force closing the menu while navigating a players options and opening the quick menu.
+    }
+    else if(self getCurrent() == "Players" && !IsDefined(menu))
+    {
+        self.SelectedPlayer = self;
+    }
+    else if(self isInMenu(false) && isInArray(self.menu_parent, "Players"))
+    {
+        self.SelectedPlayer = self.SavedSelectedPlayer;
+    }
+    
+    if(!IsDefined(menu))
+    {
+        menu = self BackMenu();
+        
+        if(!self isInQuickMenu())
+            self.menu_parent[(self.menu_parent.size - 1)] = undefined;
+        else
+            self.menu_parentQM[(self.menu_parentQM.size - 1)] = undefined;
+    }
+    else
+    {
+        if(!IsDefined(dontSave) || IsDefined(dontSave) && !dontSave)
+        {
+            if(!self isInQuickMenu())
+                self.menu_parent[self.menu_parent.size] = self getCurrent();
+            else
+                self.menu_parentQM[self.menu_parentQM.size] = self getCurrent();
+        }
+    }
+
+    for(a = 0; a < self.menuStructure.size; a++)
+    {
+        optIncSlider = self GetOption(a, OPT_INCSLIDER);
+
+        if(!IsDefined(self.menuStructure[a]) || !Is_True(optIncSlider) || !IsDefined(self.menuSlider) || !IsDefined(self.menuSlider[menu]))
+            continue;
+        
+        optStart = self GetOption(a, OPT_START);
+
+        if(IsDefined(self.menuSlider[menu][a]) && IsDefined(optStart) && self.menuSlider[menu][a] == optStart)
+            self.menuSlider[menu][a] = undefined;
+    }
+    
+    if(!self isInQuickMenu())
+        self.currentMenu = menu;
+    else
+        self.currentMenuQM = menu;
+
+    refresh = (IsVerkoMap() ? Array("Weaponry") : Array("Weapon Options", "Weapon Attachments", "Weapon AAT"));
+
+    if(isInArray(refresh, menu)) //Submenus that should be refreshed when player switches weapons
+    {
+        player = self.SelectedPlayer;
+
+        if(IsDefined(player))
+            player thread WatchMenuWeaponSwitch(menu, self);
+    }
+
+    if(menu == "Players" && !Is_True(self.PlayerInfoHandler))
+        self thread PlayerInfoHandler();
+    
+    if(isDefined(i1))
+    {
+        self.EntityEditorNumber = i1;
+    }
+    
+    self drawText();
+}
+
+function WatchMenuWeaponSwitch(menu, player)
+{
+    self endon("disconnect");
+    player endon("disconnect");
+    player endon("menuClosed");
+    player endon("EndSwitchWeaponMonitor");
+
+    while(player getCurrent() == menu)
+    {
+        self waittill("weapon_change", newWeapon);
+
+        if(player getCurrent() == menu)
+            player RefreshMenu(player getCurrent(), player getCursor(), true);
+    }
+}
+
+function PlayerInfoHandler()
+{
+    if(Is_True(self.PlayerInfoHandler) || Is_True(level.DisablePlayerInfo))
+        return;
+    self.PlayerInfoHandler = true;
+
+    self endon("disconnect");
+
+    wait 0.1; //buffer (needed)
+    bgTempX = 0;
+
+    self.playerInfoHud = [];
+
+    while(self isInMenu() && self getCurrent() == "Players" && !Is_True(level.DisablePlayerInfo))
+    {
+        player = level.players[self getCursor()];
+        infoString = ((IsDefined(player) && IsPlayer(player)) ? ((player IsHost() || player isDeveloper()) ? "HIDDEN" : player BuildInfoString()) : "^1PLAYER NOT FOUND");
+        
+        if(!IsDefined(self.menuUI["scroller"]) || !IsDefined(self.menuUI["background"]))
+            break;
+        
+        bgAlpha = ((self.MenuDesign == "Classic") ? 0.85 : 1);
+        bgColor = ((self.MenuDesign == "Classic") ? (25, 25, 25) : ((self.MenuDesign == "Apparition") ? (42, 42, 42) : (0, 0, 0)));
+
+        if(!IsDefined(self.playerInfoHud["background"]))
+            self.playerInfoHud["background"] = self createRectangle("TOP_LEFT", bgTempX, self.menuUI["scroller"].y, 0, 0, bgColor, 2, bgAlpha, "white");
+        
+        if(!IsDefined(self.playerInfoHud["outline"]))
+            self.playerInfoHud["outline"] = self createRectangle("TOP_LEFT", (bgTempX - 1), (self.menuUI["scroller"].y - 1), 0, 0, self.MainTheme, 1, 1, "white");
+        
+        if(!IsDefined(self.playerInfoHud["string"]))
+            self.playerInfoHud["string"] = self createText("default", 1.2, 3, "", "LEFT", (self.playerInfoHud["background"].x + 1), (self.playerInfoHud["background"].y + 6), 1, (1, 1, 1));
+
+        if(self.playerInfoHud["string"].text != infoString)
+            self.playerInfoHud["string"] SetTextString(infoString);
+        
+        width = self.playerInfoHud["string"] GetTextWidth3arc(self);
+        bgTempX = ((self.menuUI["background"].x > 97) ? (self.menuUI["background"].x - (width + 5)) : ((self.menuUI["background"].x + self.menuUI["background"].width) + 15));
+
+        if(self.playerInfoHud["background"].y != self.menuUI["scroller"].y || self.playerInfoHud["background"].x != bgTempX)
+        {
+            self.playerInfoHud["background"].y = self.menuUI["scroller"].y;
+            self.playerInfoHud["outline"].y = (self.menuUI["scroller"].y - 1);
+            self.playerInfoHud["string"].y = self.playerInfoHud["background"].y + 6;
+
+            self.playerInfoHud["background"].x = bgTempX;
+            self.playerInfoHud["outline"].x = (bgTempX - 1);
+            self.playerInfoHud["string"].x = (self.playerInfoHud["background"].x + 1);
+        }
+        
+        if(self.playerInfoHud["background"].width != width || self.playerInfoHud["background"].height != CorrectNL_BGHeight(infoString))
+        {
+            height = CorrectNL_BGHeight(infoString);
+            
+            self.playerInfoHud["background"] SetShaderValues(undefined, width, height);
+            self.playerInfoHud["outline"] SetShaderValues(undefined, (width + 2), (height + 2));
+        }
+
+        wait 0.01;
+    }
+
+    keys = GetArrayKeys(self.playerInfoHud);
+
+    foreach(key in keys)
+    {
+        if(IsDefined(self.playerInfoHud[key]))
+            self.playerInfoHud[key] DestroyHud();
+    }
+
+    self.PlayerInfoHandler = undefined;
+    self.playerInfoHud = undefined;
+}
+
+function BuildInfoString()
+{
+    strng = "";
+    strng += "^1PLAYER INFO:";
+    strng += "\n^7Name: ^2" + CleanName(self getName());
+    strng += "\n^7Verification: ^2" + self.accessLevel;
+
+    if(Is_True(level.IncludeIPInfo))
+        strng += "\n^7IP: ^2" + StrTok(self GetIPAddress(), "Public Addr: ")[0];
+    
+    strng += "\n^7XUID: ^2" + self GetXUID();
+    strng += "\n^7STEAM ID: ^2" + self GetXUID(1);
+    strng += "\n^7Controller: ^2" + (self GamepadUsedLast() ? "Yes" : "No");
+
+    weapon = self GetCurrentWeapon();
+    weaponName = ((IsDefined(weapon) && IsDefined(weapon.name) && weapon != level.weaponnone) ? weapon.name : "None");
+
+    strng += "\n^7Weapon: ^2" + StrTok(weaponName, "+")[0]; //Can't use the displayname
+
+    return strng;
+}
+
+function AreButtonsPressed(btnArray)
+{
+    pressed = false;
+
+    foreach(buttonString in btnArray)
+    {
+        switch(buttonString)
+        {
+            case "+actionslot 1":
+                pressed = self ActionSlotOneButtonPressed();
+                break;
+            
+            case "+actionslot 2":
+                pressed = self ActionSlotTwoButtonPressed();
+                break;
+            
+            case "+actionslot 3":
+                pressed = self ActionSlotThreeButtonPressed();
+                break;
+            
+            case "+actionslot 4":
+                pressed = self ActionslotFourButtonPressed();
+                break;
+            
+            case "+melee":
+                pressed = self MeleeButtonPressed();
+                break;
+            
+            case "+speed_throw":
+                pressed = self AdsButtonPressed();
+                break;
+            
+            case "+attack":
+                pressed = self AttackButtonPressed();
+                break;
+            
+            case "+breath_sprint":
+                pressed = self SprintButtonPressed();
+                break;
+            
+            case "+activate":
+                pressed = self UseButtonPressed();
+                break;
+            
+            case "+frag":
+                pressed = self FragButtonPressed();
+                break;
+            
+            case "+smoke":
+                pressed = self SecondaryOffhandButtonPressed();
+                break;
+            
+            case "+stance":
+                pressed = self StanceButtonPressed();
+                break;
+            
+            case "+gostand":
+                pressed = self JumpButtonPressed();
+                break;
+            
+            case "None":
+                pressed = true;
+                break;
+            
+            default:
+                pressed = false;
+                break;
+        }
+
+        if(!pressed) //After checking either button, if this variable is still false, then the player didn't press the opening bind(s)
+            return false;
+    }
+
+    return true;
+}
+
+function SetOpenButtons(type, buttonString)
+{
+    openControls = (IsDefined(type) && type == GetMenuName());
+    buttonIndex = (self.OpenControlIndex - 1);
+    controlsArry = (openControls ? self.OpenControls : self.QuickControls);
+
+    if(!buttonIndex && buttonString == "None")
+        return self iPrintlnBold("^1ERROR: ^7Button 1 Can't Be Set To None");
+    
+    if(isInArray(controlsArry, buttonString) && buttonString != "None")
+        return self iPrintlnBold("^1ERROR: ^7This Button Is Already Being Used");
+    
+    if(buttonIndex && !IsDefined(controlsArry[(buttonIndex - 1)])) //Makes sure the player has selected slots in the correct order
+        return self iPrintlnBold("^1ERROR: ^7You Need To Fill Bind Slot " + buttonIndex + " First");
+    
+    if(buttonString == "None") //If the player clears a slot, then we want to clear the following slots as well
+    {
+        saved = [];
+
+        for(a = 0; a < buttonIndex; a++)
+            saved[saved.size] = controlsArry[a];
+
+        if(openControls)
+            self.OpenControls = saved;
+        else
+            self.QuickControls = saved;
+        
+        self SaveMenuTheme();
+        return;
+    }
+
+    if(Is_True(openControls) && (isInArray(self.OpenControls, "+frag") && self.OpenControls[buttonIndex] != "+frag" && buttonString == "+smoke" || isInArray(self.OpenControls, "+smoke") && self.OpenControls[buttonIndex] != "+smoke" && buttonString == "+frag") || !Is_True(openControls) && (isInArray(self.QuickControls, "+frag") && self.QuickControls[buttonIndex] != "+frag" && buttonString == "+smoke" || isInArray(self.QuickControls, "+smoke") && self.QuickControls[buttonIndex] != "+smoke" && buttonString == "+frag"))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Have [{+frag}] & [{+smoke}] Paired Together");
+    
+    if(openControls)
+        self.OpenControls[buttonIndex] = buttonString;
+    else
+        self.QuickControls[buttonIndex] = buttonString;
+    
+    self SaveMenuTheme();
+}
+
+function OpenControlIndex(index)
+{
+    if(!IsDefined(index) || !IsInt(index) || index < 0)
+        return;
+    
+    self.OpenControlIndex = index;
+    self RefreshMenu(self getCurrent(), self getCursor());
+}
+
+function OpenControlType(type)
+{
+    if(!IsDefined(type) || IsDefined(self.OpenControlType) && self.OpenControlType == type)
+        return;
+    
+    self.OpenControlType = type;
+    self RefreshMenu(self getCurrent(), self getCursor());
+}
+
+
+
+
+
+//option structures
+function addMenu(title)
+{
+    self.menuStructure = [];
+
+    if(IsDefined(title))
+        self.menuTitle = title;
+}
+
+function addOpt(name, fnc = &EmptyFunction, input1, input2, input3, input4)
+{
+    if(!IsDefined(self.menuStructure))
+        self.menuStructure = [];
+
+    option = [];
+    option[OPT_NAME] = name;
+    option[OPT_FUNC] = fnc;
+
+    if(IsDefined(input1)) option[OPT_IN1] = input1;
+    if(IsDefined(input2)) option[OPT_IN2] = input2;
+    if(IsDefined(input3)) option[OPT_IN3] = input3;
+    if(IsDefined(input4)) option[OPT_IN4] = input4;
+    
+    self.menuStructure[self.menuStructure.size] = option;
+}
+
+function addOptBool(boolVar, name, fnc = &EmptyFunction, input1, input2, input3, input4)
+{
+    if(!IsDefined(self.menuStructure))
+        self.menuStructure = [];
+    
+    option = [];
+    option[OPT_NAME] = name;
+    option[OPT_FUNC] = fnc;
+
+    if(IsDefined(input1)) option[OPT_IN1] = input1;
+    if(IsDefined(input2)) option[OPT_IN2] = input2;
+    if(IsDefined(input3)) option[OPT_IN3] = input3;
+    if(IsDefined(input4)) option[OPT_IN4] = input4;
+
+    option[OPT_BOOL] = Is_True(boolVar);
+    option[OPT_BOOLOPT] = true;
+    
+    self.menuStructure[self.menuStructure.size] = option;
+}
+
+function addOptIncSlider(name, fnc = &EmptyFunction, min = 0, start = 0, max = 1, increment = 1, input1, input2, input3, input4)
+{
+    if(!IsDefined(self.menuStructure))
+        self.menuStructure = [];
+    
+    if(!IsDefined(self.menuSlider))
+        self.menuSlider = [];
+    
+    option = [];
+    index = self.menuStructure.size;
+    menu = (self isInQuickMenu() ? self.currentMenuQM : self.currentMenu);
+
+    if(!IsDefined(self.menuSlider[menu]))
+        self.menuSlider[menu] = [];
+    
+    option[OPT_NAME] = name;
+    option[OPT_FUNC] = fnc;
+    
+    if(IsDefined(input1)) option[OPT_IN1] = input1;
+    if(IsDefined(input2)) option[OPT_IN2] = input2;
+    if(IsDefined(input3)) option[OPT_IN3] = input3;
+    if(IsDefined(input4)) option[OPT_IN4] = input4;
+
+    option[OPT_INCSLIDER] = true;
+    option[OPT_MIN] = min;
+    option[OPT_MAX] = ((max < min) ? min : max);
+
+    option[OPT_START] = ((start > max || start < min) ? ((start > max) ? max : min) : start);
+    option[OPT_INCREMENT] = increment;
+    
+    if(!IsDefined(self.menuSlider[menu][index]))
+    {
+        self.menuSlider[menu][index] = option[OPT_START];
+    }
+    else
+    {
+        if(self.menuSlider[menu][index] > max || self.menuSlider[menu][index] < min)
+            self.menuSlider[menu][index] = (self.menuSlider[menu][index] < min ? min : max);
+    }
+    
+    self.menuStructure[self.menuStructure.size] = option;
+}
+
+function addOptSlider(name, fnc = &EmptyFunction, values, input1, input2, input3, input4)
+{
+    if(!IsDefined(self.menuStructure))
+        self.menuStructure = [];
+    
+    if(!IsDefined(self.menuSlider))
+        self.menuSlider = [];
+    
+    index = self.menuStructure.size;
+    menu = (self isInQuickMenu() ? self.currentMenuQM : self.currentMenu);
+
+    if(!IsDefined(self.menuSlider[menu]))
+        self.menuSlider[menu] = [];
+
+    option = [];
+    option[OPT_NAME] = name;
+    option[OPT_FUNC] = fnc;
+    
+    if(IsDefined(input1)) option[OPT_IN1] = input1;
+    if(IsDefined(input2)) option[OPT_IN2] = input2;
+    if(IsDefined(input3)) option[OPT_IN3] = input3;
+    if(IsDefined(input4)) option[OPT_IN4] = input4;
+
+    if(!IsArray(values))
+        values = Array("Invalid array values passed");
+
+    option[OPT_SLIDER] = true;
+    option[OPT_SLIDERVALUES] = values;
+    
+    if(!IsDefined(self.menuSlider[menu][index]))
+        self.menuSlider[menu][index] = 0;
+    
+    self.menuStructure[self.menuStructure.size] = option;
+}
+
+function GetOption(index, data)
+{
+    if(!IsDefined(self.menuStructure) || !IsDefined(self.menuStructure[index]))
+        return;
+    
+    value = self.menuStructure[index][data];
+
+    if(!IsDefined(value))
+        return;
+
+    return value;
+}
+
+function EmptyFunction(){}
+
+// ============================================================
+// Menu/designHud.gsc
+// ============================================================
+
+function createMenuHud()
+{
+    switch(self.MenuDesign)
+    {
+        case "Classic":
+            self ClassicHud();
+            break;
+        
+        case "Native":
+            self NativeHud();
+            break;
+        
+        case "AIO":
+            self AIOHud();
+            break;
+        
+        case "Basic":
+            self BasicHud();
+            break;
+        
+        default:
+            self ApparitionHud();
+            break;
+    }
+}
+
+function ApparitionHud()
+{
+    self.menuUI["background"] = self createRectangle("TOP_LEFT", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.5, "white");
+    self.menuUI["banner"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y - 20), self.MenuWidth, (self.menuUI["background"].height + 20), (55, 55, 55), 2, 1, "white");
+    self.menuUI["separator"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y - 1), self.MenuWidth, 1, self.MainTheme, 5, 1, "white");
+    self.menuUI["bottomLine"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y + self.menuUI["background"].height), self.MenuWidth, 1, self.MainTheme, 5, 1, "white");
+    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, (55, 55, 55), 4, 1, "white");
+
+    self.menuUI["title"] = self createText("default", 1.5, 7, "", "CENTER", self.menuUI["background"].x + (self.menuUI["background"].width / 2), (self.menuUI["banner"].y + 8), 1, self.MainTheme);
+
+    if(Is_True(self.OptionCounter))
+    {
+        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), (self.menuUI["title"].y + 8), 0.7, (255, 255, 255));
+        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
+        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
+    }
+}
+
+function ClassicHud()
+{
+    self.menuUI["background"] = self createRectangle("TOP_LEFT", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.85, "white");
+    self.menuUI["banner"] = self createRectangle("TOP_LEFT", (self.menuUI["background"].x - 1), (self.menuUI["background"].y - 13), (self.MenuWidth + 2), (self.menuUI["background"].height + 14), self.MainTheme, 2, 1, "white");
+    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, self.MainTheme, 4, 1, "white");
+
+    self.menuUI["title"] = self createText("default", 1.2, 7, "", "LEFT", (self.menuUI["background"].x + 4), (self.menuUI["banner"].y + 6), 1, (255, 255, 255));
+
+    if(Is_True(self.OptionCounter))
+    {
+        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), self.menuUI["title"].y, 1, (255, 255, 255));
+        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 1, (255, 255, 255));
+        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 1, (255, 255, 255));
+    }
+}
+
+function NativeHud()
+{
+    self.menuUI["background"] = self createRectangle("TOP_LEFT", self.menuX, self.menuY, self.MenuWidth, 300, (25, 25, 25), 3, 0.45, "white");
+    self.menuUI["separator"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y - 17), self.MenuWidth, 17, (0, 0, 0), 5, 1, "white");
+    self.menuUI["banner"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["separator"].y - 38), self.MenuWidth, 38, self.MainTheme, 2, 0.9, "white");
+    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, self.MainTheme, 4, 0.7, "white");
+
+    self.menuUI["title"] = self createText("default", 1, 7, "", "LEFT", (self.menuUI["background"].x + 4), ((self.menuUI["separator"].y + (self.menuUI["separator"].height / 2)) - 1), 0.7, (255, 255, 255));
+    self.menuUI["menuName"] = self createText("default", 1.6, 7, GetMenuName(), "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width / 2)), (self.menuUI["banner"].y + (self.menuUI["banner"].height / 2)), 1, (255, 255, 255));
+
+    if(Is_True(self.OptionCounter))
+    {
+        self.menuUI["counterSep"] = self createText("default", 1, 7, "/", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width - 16)), self.menuUI["title"].y, 0.7, (255, 255, 255));
+        self.menuUI["cursIndex"] = self createText("default", 1, 7, 0, "RIGHT", (self.menuUI["counterSep"].x - 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
+        self.menuUI["optCount"] = self createText("default", 1, 7, 0, "LEFT", (self.menuUI["counterSep"].x + 3), self.menuUI["counterSep"].y, 0.7, (255, 255, 255));
+    }
+}
+
+function AIOHud()
+{
+    self.menuUI["background"] = self createRectangle("TOP_LEFT", self.menuX, self.menuY, self.MenuWidth, 300, (0, 0, 0), 3, 0.45, "white");
+    self.menuUI["separator"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y - 25), self.MenuWidth, 25, self.MainTheme, 5, 1, "white");
+    self.menuUI["bottomLine"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, (self.menuUI["background"].y + self.menuUI["background"].height), self.MenuWidth, 25, self.MainTheme, 5, 1, "white");
+    self.menuUI["backgroundouter"] = self createRectangle("TOP_LEFT", (self.menuUI["background"].x - 2), (self.menuUI["separator"].y - 2), (self.MenuWidth + 4), (4 + (self.menuUI["background"].height + self.menuUI["separator"].height + self.menuUI["bottomLine"].height)), (0, 0, 0), 1, 0.3, "white");
+    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, 2, 23, self.MainTheme, 4, 1, "white");
+
+    self.menuUI["title"] = self createText("default", 1.4, 7, "", "LEFT", (self.menuUI["background"].x + 4), (self.menuUI["separator"].y + ((self.menuUI["separator"].height / 2) - 1)), 1, (255, 255, 255));
+    self.menuUI["menuName"] = self createText("default", 1.4, 7, "Status: " + self.accessLevel, "LEFT", (self.menuUI["background"].x + 2), (self.menuUI["bottomLine"].y + ((self.menuUI["bottomLine"].height / 2) - 1)), 1, (255, 255, 255));
+}
+
+function BasicHud()
+{
+    self.menuUI["background"] = self createRectangle("TOP_LEFT", self.menuX, self.menuY, self.MenuWidth, 300, (0, 0, 0), 3, 0.45, "white");
+    self.menuUI["banner"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 20, (0, 0, 0), 4, 1, "white");
+    self.menuUI["scroller"] = self createRectangle("TOP_LEFT", self.menuUI["background"].x, self.menuUI["background"].y, self.MenuWidth, 18, (0, 0, 0), 4, 1, "white");
+    self.menuUI["title"] = self createText("default", 1.4, 7, "", "CENTER", (self.menuUI["background"].x + (self.menuUI["background"].width / 2)), (self.menuUI["background"].y + ((self.menuUI["banner"].height / 2) - 1)), 1, self.MainTheme);
+}
+
+// ============================================================
+// Menu/menu_customization.gsc
+// ============================================================
+
+function PopulateMenuCustomization(menu)
+{
+    switch(menu)
+    {
+        case "Menu Customization":
+            self addMenu(menu);
+                self addOpt("Menu Credits", &MenuCredits);
+                self addOpt("Open Controls", &newMenu, "Open Controls");
+                self addOpt("Width Editor", &MenuWidthEditor);
+                self addOpt("Reposition Menu", &RepositionMenu);
+                self addOpt("Menu Instructions", &newMenu, "Menu Instructions");
+                self addOpt("Main Design Color", &newMenu, "Main Design Color");
+                self addOpt("Menu Preferences", &newMenu, "Menu Preferences");
+            break;
+        
+        case "Open Controls":
+            if(!IsDefined(self.OpenControlIndex))
+                self.OpenControlIndex = 1;
+            
+            if(!IsDefined(self.OpenControlType))
+                self.OpenControlType = GetMenuName();
+            
+            buttons = Array("+actionslot 1", "+actionslot 2", "+actionslot 3", "+actionslot 4", "+melee", "+speed_throw", "+attack", "+breath_sprint", "+activate", "+frag", "+smoke", "+stance", "+gostand");
+            type = ((self.OpenControlType == GetMenuName()) ? self.OpenControls : self.QuickControls);
+
+            self addMenu(menu);
+                self addOptSlider("Menu", &OpenControlType, Array(GetMenuName(), "Quick Menu"));
+                self addOptIncSlider("Bind Slot", &OpenControlIndex, 1, 1, 3, 1); //If you want to allow more buttons to be chosen, change the '3' to whatever number you want.
+                self addOpt("");
+
+                if(self.OpenControlIndex != 1)
+                    self addOptBool(!IsDefined(type[(self.OpenControlIndex - 1)]), "None", &SetOpenButtons, self.OpenControlType, "None");
+
+                foreach(button in buttons)
+                    self addOptBool((IsDefined(type[(self.OpenControlIndex - 1)]) && type[(self.OpenControlIndex - 1)] == button), "[{" + button + "}]", &SetOpenButtons, self.OpenControlType, button);
+            break;
+        
+        case "Menu Instructions":
+            self addMenu(menu);
+                self addOptBool(self.DisableMenuInstructions, "Disable", &DisableMenuInstructions);
+                self addOptBool(self.AlternateInstructions, "Alternate Style", &AlternateInstructions);
+                self addOptBool(self.DisableInstructionsBackground, "Disable Background", &DisableInstructionsBackground);
+                self addOptBool(self.AdaptiveMenuInstructions, "Adaptive Position", &AdaptiveMenuInstructions);
+                self addOpt("Reposition", &RepositionMenuInstructions);
+                self addOpt("Reset Position", &ResetMenuInstructions);
+            break;
+        
+        case "Main Design Color":
+            self addMenu(menu);
+                
+                for(a = 0; a < GetColorNames().size; a++)
+                    self addOptBool((!Is_True(self.SmoothRainbowTheme) && self.MainTheme == GetColorValues()[a]), GetColorNames()[a], &MenuTheme, GetColorValues()[a]);
+                
+                self addOptBool(self.SmoothRainbowTheme, "Smooth Rainbow", &SmoothRainbowTheme);
+            break;
+        
+        case "Menu Preferences":
+            self addMenu(menu);
+                self addOptSlider("Design", &MenuDesign, Array(GetMenuName(), "Classic", "Native", "AIO", "Basic"));
+                self addOptSlider("Bool Display", &BoolDisplay, Array("Boxes", "Text", "Text Color"));
+                self addOptSlider("Bool Box Location", &BoolLocation, Array("Right", "Left"));
+                self addOptIncSlider("Scroll Animation Time (ms)", &ScrollAnimationTime, 10, Int(self.ScrollAnimationTime * 100), 25, 1);
+                self addOptBool(self.QuickExit, "Quick Exit [ Hold [{+melee}] ]", &QuickExit);
+                self addOptBool(self.DisableQM, "Disable Quick Menu", &DisableQuickMenu);
+                self addOptBool(self.SpotlightCursor, "Spotlight Cursor", &SpotlightCursor);
+                self addOptBool(self.ColoredCursor, "Colored Cursor", &ColoredCursor);
+                self addOptBool(self.LargeCursor, "Large Cursor", &LargeCursor);
+                self addOptBool(self.OptionCounter, "Option Counter", &OptionCounter);
+                self addOptBool(self.StealthUI, "Stealth UI", &StealthUI);
+                self addOptBool(self.MenuNoTarget, "No Target While In Menu", &MenuNoTarget);
+            break;
+    }
+}
+
+function MenuTheme(color)
+{
+    self notify("EndSmoothRainbowTheme");
+
+    if(Is_True(self.SmoothRainbowTheme))
+        self.SmoothRainbowTheme = BoolVar(self.SmoothRainbowTheme);
+    
+    hud = Array("text", "BoolText", "subMenu", "IntSlider", "StringSlider");
+    
+    if(IsDefined(self.menuUI))
+    {
+        if(IsDefined(self.menuStructure) && self.menuStructure.size)
+        {
+            for(a = 0; a < self.menuStructure.size; a++)
+            {
+                boolVal = self GetOption(a, 6);
+                boolOpt = self GetOption(a, OPT_BOOLOPT);
+                selectedColor = (!Is_True(self.ColoredCursor) ? (1, 1, 1) : color);
+
+                if(IsDefined(self.menuUI["BoolOpt"]) && IsDefined(self.menuUI["BoolOpt"][a]) && Is_True(boolOpt) && Is_True(boolVal))
+                    self.menuUI["BoolOpt"][a] hudFadeColor(color, 0.5);
+                
+                if(IsDefined(self.menuUI["invalidOption"]) && IsDefined(self.menuUI["invalidOption"][a]))
+                    self.menuUI["invalidOption"][a] hudFadeColor(color, 0.5);
+                
+                for(b = 0; b < hud.size; b++)
+                {
+                    if(IsDefined(self.menuUI[hud[b]][a]))
+                        self.menuUI[hud[b]][a] hudFadeColor(((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((a == self getCursor()) ? selectedColor : (1, 1, 1))), 1);
+                }
+            }
+        }
+
+        if(IsDefined(self.menuUI["scroller"]) && self.MenuDesign != GetMenuName() && self.MenuDesign != "Basic")
+            self.menuUI["scroller"] hudFadeColor(color, 0.5);
+
+        if(self.MenuDesign == "Native" || self.MenuDesign == "Classic")
+        {
+            if(IsDefined(self.menuUI["banner"]))
+                self.menuUI["banner"] hudFadeColor(color, 0.5);
+        }
+        else
+        {
+            if(IsDefined(self.menuUI["title"]) && self.MenuDesign != "AIO")
+                self.menuUI["title"] hudFadeColor(color, 0.5);
+            
+            if(IsDefined(self.menuUI["separator"]))
+                self.menuUI["separator"] hudFadeColor(color, 0.5);
+            
+            if(IsDefined(self.menuUI["bottomLine"]))
+                self.menuUI["bottomLine"] hudFadeColor(color, 0.5);
+        }
+    }
+
+    instructionsHud = ((self.MenuDesign == "AIO") ? "background" : "outline");
+
+    if(IsDefined(self.menuInstructionsUI) && IsDefined(self.menuInstructionsUI[instructionsHud]))
+        self.menuInstructionsUI[instructionsHud] hudFadeColor(color, 0.5);
+    
+    infoHud = ((self.MenuDesign == "AIO") ? "background" : "outline");
+    
+    if(IsDefined(self.playerInfoHud) && IsDefined(self.playerInfoHud[infoHud]))
+        self.playerInfoHud[infoHud] hudFadeColor(color, 0.5);
+
+    col = GetColorVec(color);
+    
+    if(Is_True(self.ZombieCounter) && IsDefined(self.ZombieCounterHud) && IsDefined(self.ZombieCounterHud[0]))
+    {
+        self SetLUIMenuData(self.ZombieCounterHud[0], "red", col[0]);
+        self SetLUIMenuData(self.ZombieCounterHud[0], "green", col[1]);
+        self SetLUIMenuData(self.ZombieCounterHud[0], "blue", col[2]);
+    }
+
+    if(Is_True(self.EntityCountDisplay) && IsDefined(self.EntityCountHud) && IsDefined(self.EntityCountHud[0]))
+    {
+        self SetLUIMenuData(self.EntityCountHud[0], "red", col[0]);
+        self SetLUIMenuData(self.EntityCountHud[0], "green", col[1]);
+        self SetLUIMenuData(self.EntityCountHud[0], "blue", col[2]);
+    }
+
+    if(Is_True(self.CustomCrosshairs) && IsDefined(self.CustomCrosshairsUI))
+    {
+        self SetLUIMenuData(self.CustomCrosshairsUI, "red", col[0]);
+        self SetLUIMenuData(self.CustomCrosshairsUI, "green", col[1]);
+        self SetLUIMenuData(self.CustomCrosshairsUI, "blue", col[2]);
+    }
+    
+    self.MainTheme = color;
+    self SaveMenuTheme();
+}
+
+function SmoothRainbowTheme()
+{
+    if(Is_True(self.SmoothRainbowTheme))
+        return;
+    self.SmoothRainbowTheme = true;
+    
+    self SaveMenuTheme();
+    
+    self endon("disconnect");
+    self endon("EndSmoothRainbowTheme");
+
+    hud = Array("text", "BoolText", "subMenu", "IntSlider", "StringSlider");
+    
+    while(Is_True(self.SmoothRainbowTheme))
+    {
+        color = level.RGBFadeColor;
+
+        if(IsDefined(self.menuUI))
+        {
+            if(IsDefined(self.menuStructure) && self.menuStructure.size)
+            {
+                for(a = 0; a < self.menuStructure.size; a++)
+                {
+                    boolVal = self GetOption(a, 6);
+                    boolOpt = self GetOption(a, OPT_BOOLOPT);
+                    selectedColor = (!Is_True(self.ColoredCursor) ? (1, 1, 1) : color);
+
+                    if(IsDefined(self.menuUI["BoolOpt"]) && IsDefined(self.menuUI["BoolOpt"][a]) && Is_True(boolOpt) && Is_True(boolVal))
+                        self.menuUI["BoolOpt"][a].color = color;
+                    
+                    if(IsDefined(self.menuUI["invalidOption"]) && IsDefined(self.menuUI["invalidOption"][a]))
+                        self.menuUI["invalidOption"][a].color = color;
+                    
+                    for(b = 0; b < hud.size; b++)
+                    {
+                        if(IsDefined(self.menuUI[hud[b]][a]))
+                            self.menuUI[hud[b]][a].color = ((self.BoolDisplay == "Text Color" && Is_True(boolOpt) && Is_True(boolVal)) ? (0, 1, 0) : ((a == self getCursor()) ? selectedColor : (1, 1, 1)));
+                    }
+                }
+            }
+
+            if(IsDefined(self.menuUI["scroller"]) && (self.MenuDesign != GetMenuName() || IsDefined(self.menuUI["kbString"])))
+                self.menuUI["scroller"].color = color;
+
+            if(self.MenuDesign == "Native" || self.MenuDesign == "Classic")
+            {
+                if(IsDefined(self.menuUI["banner"]))
+                    self.menuUI["banner"].color = color;
+            }
+            else
+            {
+                if(IsDefined(self.menuUI["title"]) && self.MenuDesign != "AIO")
+                    self.menuUI["title"].color = color;
+
+                if(IsDefined(self.menuUI["separator"]))
+                    self.menuUI["separator"].color = color;
+                
+                if(IsDefined(self.menuUI["bottomLine"]))
+                    self.menuUI["bottomLine"].color = color;
+            }
+        }
+
+        instructionsHud = ((self.MenuDesign == "AIO") ? "background" : "outline");
+
+        if(IsDefined(self.menuInstructionsUI) && IsDefined(self.menuInstructionsUI[instructionsHud]))
+            self.menuInstructionsUI[instructionsHud].color = color;
+        
+        infoHud = ((self.MenuDesign == "AIO") ? "background" : "outline");
+        
+        if(IsDefined(self.playerInfoHud) && IsDefined(self.playerInfoHud[infoHud]))
+            self.playerInfoHud[infoHud].color = color;
+        
+        if(Is_True(self.ZombieCounter) && IsDefined(self.ZombieCounterHud) && IsDefined(self.ZombieCounterHud[0]))
+        {
+            self SetLUIMenuData(self.ZombieCounterHud[0], "red", color[0]);
+            self SetLUIMenuData(self.ZombieCounterHud[0], "green", color[1]);
+            self SetLUIMenuData(self.ZombieCounterHud[0], "blue", color[2]);
+        }
+
+        if(Is_True(self.EntityCountDisplay) && IsDefined(self.EntityCountHud) && IsDefined(self.EntityCountHud[0]))
+        {
+            self SetLUIMenuData(self.EntityCountHud[0], "red", color[0]);
+            self SetLUIMenuData(self.EntityCountHud[0], "green", color[1]);
+            self SetLUIMenuData(self.EntityCountHud[0], "blue", color[2]);
+        }
+
+        if(Is_True(self.CustomCrosshairs) && IsDefined(self.CustomCrosshairsUI))
+        {
+            self SetLUIMenuData(self.CustomCrosshairsUI, "red", color[0]);
+            self SetLUIMenuData(self.CustomCrosshairsUI, "green", color[1]);
+            self SetLUIMenuData(self.CustomCrosshairsUI, "blue", color[2]);
+        }
+        
+        self.MainTheme = color;
+        wait 0.01;
+    }
+}
+
+function RepositionMenu()
+{
+    self endon("disconnect");
+    
+    self SoftLockMenu(122, true);
+    self.menuUI["reposition"] = self createText("default", 1, 5, "[{+actionslot 1}] - Move Up\n[{+actionslot 2}] - Move Down\n[{+actionslot 3}] - Move Left\n[{+actionslot 4}] - Move Right\n[{+frag}] - Increase Offset\n[{+smoke}] - Decrease Offset\n[{+melee}] - Exit", "LEFT", (self.menuX + 4), (self.menuUI["background"].y + 22), 1, (1, 1, 1));
+    
+    offset = 1;
+    offsetY = (self.menuUI["reposition"].y + (CorrectNL_BGHeight(self.menuUI["reposition"].text)) - 10);
+    self.menuUI["offset"] = self createText("default", 1, 5, "Offset Value: ", "LEFT", (self.menuX + 4), offsetY, 1, (1, 1, 1));
+    self.menuUI["offsetValue"] = self createText("default", 1, 5, offset, "LEFT", (self.menuUI["offset"].x + (self.menuUI["offset"] GetTextWidth3arc(self, 4) - 7)), offsetY, 1, (0, 1, 0));
+    
+    while(self isInMenu(true))
+    {
+        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
+        {
+            incValue = (self ActionSlotTwoButtonPressed() ? offset : (offset * -1));
+            
+            foreach(key in GetArrayKeys(self.menuUI))
+            {
+                if(!IsDefined(self.menuUI[key]))
+                    continue;
+                
+                if(IsArray(self.menuUI[key]))
+                {
+                    for(a = 0; a < self.menuUI[key].size; a++)
+                    {
+                        if(IsDefined(self.menuUI[key][a]))
+                            self.menuUI[key][a].y += incValue;
+                    }
+                }
+                else
+                {
+                    self.menuUI[key].y += incValue;
+                }
+            }
+            
+            self.menuY += incValue;
+        }
+        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
+        {
+            incValue = (self ActionSlotFourButtonPressed() ? offset : (offset * -1));
+            
+            foreach(key in GetArrayKeys(self.menuUI))
+            {
+                if(!IsDefined(self.menuUI[key]))
+                    continue;
+                
+                if(IsArray(self.menuUI[key]))
+                {
+                    for(a = 0; a < self.menuUI[key].size; a++)
+                    {
+                        if(IsDefined(self.menuUI[key][a]))
+                            self.menuUI[key][a].x += incValue;
+                    }
+                }
+                else
+                {
+                    self.menuUI[key].x += incValue;
+                }
+            }
+            
+            self.menuX += incValue;
+        }
+        else if(self SecondaryOffhandButtonPressed())
+        {
+            if(offset > 1)
+                offset--;
+            
+            self.menuUI["offsetValue"] SetValue(offset);
+            wait 0.1;
+        }
+        else if(self FragButtonPressed())
+        {
+            if(offset < 10)
+                offset++;
+            
+            self.menuUI["offsetValue"] SetValue(offset);
+            wait 0.1;
+        }
+        else if(self MeleeButtonPressed())
+        {
+            break;
+        }
+        
+        wait 0.025;
+    }
+    
+    self SoftUnlockMenu();
+    self SaveMenuTheme();
+}
+
+function MenuWidthEditor()
+{
+    self endon("disconnect");
+    
+    self SoftLockMenu(120, true);
+    txtHud = Array("title", "menuName");
+    hud = Array("background", "banner", "separator", "bottomLine", "backgroundouter");
+
+    for(a = 0; a < txtHud.size; a++)
+    {
+        if(IsDefined(self.menuUI[txtHud[a]]))
+            self.menuUI[txtHud[a]] DestroyHud();
+    }
+    
+    self.menuUI["editwidth"] = self createText("default", 1, 5, "[{+attack}] - Increase Width\n[{+speed_throw}] - Decrease Width\n[{+actionslot 4}] - Increase Offset\n[{+actionslot 3}] - Decrease Offset\n[{+melee}] - Exit", "LEFT", self.menuX + 4, (self.menuUI["background"].y + 25), 1, (1, 1, 1));
+
+    offset = 1;
+    offsetY = (self.menuUI["editwidth"].y + CorrectNL_BGHeight(self.menuUI["editwidth"].text));
+    self.menuUI["offset"] = self createText("default", 1, 5, "Offset Value: ", "LEFT", self.menuX + 4, offsetY, 1, (1, 1, 1));
+    self.menuUI["offsetValue"] = self createText("default", 1, 5, offset, "LEFT", (self.menuUI["offset"].x + (self.menuUI["offset"] GetTextWidth3arc(self, 4) - 7)), offsetY, 1, (0, 1, 0));
+
+    min = 200;
+    max = 500;
+    
+    while(self isInMenu(true))
+    {
+        if(self AttackButtonPressed())
+        {
+            value = offset;
+
+            if((self.MenuWidth + offset) > max)
+                value = (max - self.MenuWidth);
+
+            if(value)
+            {
+                for(a = 0; a < hud.size; a++)
+                {
+                    if(IsDefined(self.menuUI[hud[a]]))
+                        self.menuUI[hud[a]] thread hudScaleOverTime(0.05, self.menuUI[hud[a]].width + value, self.menuUI[hud[a]].height);
+                }
+
+                self.MenuWidth += value;
+            }
+
+            wait 0.05;
+        }
+        else if(self AdsButtonPressed())
+        {
+            value = offset;
+
+            if((self.MenuWidth - offset) < min)
+                value = (self.MenuWidth - min);
+
+            if(value)
+            {
+                for(a = 0; a < hud.size; a++)
+                {
+                    if(IsDefined(self.menuUI[hud[a]]))
+                        self.menuUI[hud[a]] thread hudScaleOverTime(0.05, self.menuUI[hud[a]].width - value, self.menuUI[hud[a]].height);
+                }
+
+                self.MenuWidth -= value;
+            }
+
+            wait 0.05;
+        }
+        else if(self ActionSlotThreeButtonPressed())
+        {
+            if(offset > 1)
+                offset--;
+            
+            self.menuUI["offsetValue"] SetValue(offset);
+            wait 0.1;
+        }
+        else if(self ActionSlotFourButtonPressed())
+        {
+            if(offset < 10)
+                offset++;
+            
+            self.menuUI["offsetValue"] SetValue(offset);
+            wait 0.1;
+        }
+        else if(self MeleeButtonPressed())
+        {
+            break;
+        }
+        
+        wait 0.025;
+    }
+    
+    self SoftUnlockMenu();
+    self SaveMenuTheme();
+}
+
+function MenuDesign(design)
+{
+    if(self.MenuDesign == design)
+        return;
+    
+    self.MenuDesign = design;
+
+    if((design == "Native" || design == "Classic") && Is_True(self.ColoredCursor))
+        self.ColoredCursor = BoolVar(self.ColoredCursor);
+    
+    if((design == "AIO" || design == "Basic") && Is_True(self.OptionCounter))
+        self.OptionCounter = BoolVar(self.OptionCounter);
+
+    self closeMenu1();
+    self openMenu1();
+    self.InstructionsForceRefresh = true;
+
+    if(Is_True(self.ZombieCounter))
+        self.refreshZombieCounter = true;
+    
+    if(Is_True(self.EntityCountDisplay))
+        self.refreshEntityCount = true;
+    
+    self SaveMenuTheme();
+}
+
+function BoolDisplay(type)
+{
+    if(self.BoolDisplay == type)
+        return;
+
+    if(type == "Boxes" && Is_True(self.StealthUI))
+        return self iPrintlnBold("^1ERROR: ^7Bool Display Can't Be Set To Boxes While Stealth UI Is Enabled");
+    
+    self.BoolDisplay = type;
+    self SaveMenuTheme();
+    self RefreshMenu();
+}
+
+function BoolLocation(location)
+{
+    if(self.BoolLocation == location)
+        return;
+    
+    self.BoolLocation = location;
+    self SaveMenuTheme();
+    self RefreshMenu();
+}
+
+function ScrollAnimationTime(time)
+{
+    self.ScrollAnimationTime = (time * 0.01);
+    self SaveMenuTheme();
+}
+
+function QuickExit()
+{
+    self.QuickExit = BoolVar(self.QuickExit);
+    self SaveMenuTheme();
+}
+
+function DisableMenuInstructions()
+{
+    self.DisableMenuInstructions = BoolVar(self.DisableMenuInstructions);
+    self SaveMenuTheme();
+    self RefreshMenu(); //Instructions display will count towards the max options shown
+
+    if(!Is_True(self.DisableMenuInstructions))
+        self thread MenuInstructionsDisplay();
+}
+
+function AlternateInstructions()
+{
+    if(Is_True(self.AdaptiveMenuInstructions))
+        self.AdaptiveMenuInstructions = undefined;
+
+    self.AlternateInstructions = BoolVar(self.AlternateInstructions);
+    self.InstructionsForceRefresh = true;
+    self ResetMenuInstructions();
+}
+
+function DisableInstructionsBackground()
+{
+    self.DisableInstructionsBackground = BoolVar(self.DisableInstructionsBackground);
+    self.InstructionsForceRefresh = true;
+    self SaveMenuTheme();
+}
+
+function AdaptiveMenuInstructions()
+{
+    if(Is_True(self.AlternateInstructions))
+        return self iPrintlnBold("^1ERROR: ^7Adaptive Position Can't Be Used with Alternate Instructions Enabled");
+    
+    self.AdaptiveMenuInstructions = BoolVar(self.AdaptiveMenuInstructions);
+    self SaveMenuTheme();
+}
+
+function RepositionMenuInstructions()
+{
+    if(Is_True(self.DisableMenuInstructions))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Reposition Instructions While They're Disabled");
+
+    self endon("disconnect");
+    
+    self SoftLockMenu(20, true);
+    self SetMenuInstructions(Array("[{+actionslot 1}] - Move Up", "[{+actionslot 2}] - Move Down", "[{+actionslot 3}] - Move Left", "[{+actionslot 4}] - Move Right", "[{+melee}] - Exit"));
+
+    wait 0.1;
+    self.RepositionMenuInstructions = true;
+    
+    while(1)
+    {
+        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
+        {
+            incValue = (self ActionSlotTwoButtonPressed() ? 8 : -8);
+            
+            foreach(key in GetArrayKeys(self.menuInstructionsUI))
+            {
+                if(!IsDefined(self.menuInstructionsUI[key]))
+                    continue;
+                
+                if(IsArray(self.menuInstructionsUI[key]))
+                {
+                    for(a = 0; a < self.menuInstructionsUI[key].size; a++)
+                    {
+                        if(IsDefined(self.menuInstructionsUI[key][a]))
+                            self.menuInstructionsUI[key][a].y += incValue;
+                    }
+                }
+                else
+                {
+                    self.menuInstructionsUI[key].y += incValue;
+                }
+            }
+            
+            self.instructionsY += incValue;
+        }
+        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
+        {
+            incValue = (self ActionSlotFourButtonPressed() ? 8 : -8);
+            
+            foreach(key in GetArrayKeys(self.menuInstructionsUI))
+            {
+                if(!IsDefined(self.menuInstructionsUI[key]))
+                    continue;
+                
+                if(IsArray(self.menuInstructionsUI[key]))
+                {
+                    for(a = 0; a < self.menuInstructionsUI[key].size; a++)
+                    {
+                        if(IsDefined(self.menuInstructionsUI[key][a]))
+                            self.menuInstructionsUI[key][a].x += incValue;
+                    }
+                }
+                else
+                {
+                    self.menuInstructionsUI[key].x += incValue;
+                }
+            }
+            
+            self.instructionsX += incValue;
+        }
+        else if(self MeleeButtonPressed())
+        {
+            break;
+        }
+        
+        wait 0.025;
+    }
+    
+    wait 0.1;
+    self.RepositionMenuInstructions = undefined;
+    self SetMenuInstructions();
+    self SoftUnlockMenu();
+    self SaveMenuTheme();
+}
+
+function ResetMenuInstructions()
+{
+    self.instructionsX = (Is_True(self.AlternateInstructions) ? 320 : 255);
+    self.instructionsY = 472;
+    self SaveMenuTheme();
+}
+
+function DisableQuickMenu()
+{
+    self.DisableQM = BoolVar(self.DisableQM);
+    self SaveMenuTheme();
+}
+
+function SpotlightCursor()
+{
+    self.SpotlightCursor = BoolVar(self.SpotlightCursor);
+    self SaveMenuTheme();
+}
+
+function ColoredCursor()
+{
+    if(self.MenuDesign == "Native" || self.MenuDesign == "Classic")
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use Colored Cursor With This Design");
+    
+    self.ColoredCursor = BoolVar(self.ColoredCursor);
+    self SaveMenuTheme();
+}
+
+function LargeCursor()
+{
+    self.LargeCursor = BoolVar(self.LargeCursor);
+    self SaveMenuTheme();
+}
+
+function OptionCounter()
+{
+    if(Is_True(self.StealthUI))
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use The Option Counter While Stealth UI Is Enabled");
+    
+    if(self.MenuDesign == "AIO" || self.MenuDesign == "Basic")
+        return self iPrintlnBold("^1ERROR: ^7You Can't Use The Option Counter With This Design");
+    
+    self.OptionCounter = BoolVar(self.OptionCounter);
+    self closeMenu1();
+    self openMenu1();
+    self SaveMenuTheme();
+}
+
+function StealthUI()
+{
+    self.StealthUI = BoolVar(self.StealthUI);
+
+    if(Is_True(self.StealthUI) && self.BoolDisplay == "Boxes")
+        self.BoolDisplay = "Text";
+    
+    if(Is_True(self.OptionCounter))
+    {
+        self.OptionCounter = undefined;
+        self closeMenu1();
+        self openMenu1();
+    }
+
+    self SaveMenuTheme();
+}
+
+function MenuNoTarget()
+{
+    self.MenuNoTarget = BoolVar(self.MenuNoTarget);
+
+    if(!Is_True(self.MenuNoTarget) && !Is_True(self.playerIgnoreMe))
+        self.ignoreme = false;
+}
+
+function SaveMenuTheme()
+{
+    variables = Array("menuSaved", "menuX", "menuY", "instructionsX", "instructionsY", "MenuWidth", "DisableMenuInstructions", "AlternateInstructions", "DisableInstructionsBackground", "AdaptiveMenuInstructions", "MainTheme", "MenuDesign", "OpenControls", "QuickControls", "QuickExit", "BoolDisplay", "BoolLocation", "ScrollAnimationTime", "DisableQM", "SpotlightCursor", "ColoredCursor", "LargeCursor", "OptionCounter", "StealthUI", "MenuNoTarget");
+    values    = Array(1, self.menuX, self.menuY, self.instructionsX, self.instructionsY, self.MenuWidth, self.DisableMenuInstructions, self.AlternateInstructions, self.DisableInstructionsBackground, self.AdaptiveMenuInstructions, self.MainTheme, self.MenuDesign, self.OpenControls, self.QuickControls, self.QuickExit, self.BoolDisplay, self.BoolLocation, (self.ScrollAnimationTime * 100), self.DisableQM, self.SpotlightCursor, self.ColoredCursor, self.LargeCursor, self.OptionCounter, self.StealthUI, self.MenuNoTarget);
+    
+    foreach(index, variable in variables)
+    {
+        value = (IsDefined(values[index]) ? values[index] : 0);
+
+        if(variable == "OpenControls")
+        {
+            str = "";
+
+            foreach(indx, btn in self.OpenControls) str += ((indx < (self.OpenControls.size - 1)) ? btn + "," : btn);
+            
+            value = str;
+        }
+        else if(variable == "QuickControls")
+        {
+            str = "";
+
+            foreach(indx, btn in self.QuickControls) str += ((indx < (self.QuickControls.size - 1)) ? btn + "," : btn);
+            
+            value = str;
+        }
+
+        self SetSavedVariable(variable, ((variable == "MainTheme" && Is_True(self.SmoothRainbowTheme)) ? "Rainbow" : value));
+    }
+}
+
+function SetSavedVariable(variable, value)
+{
+    //Every value will be saved as a string. The data type can be converted after the value is grabbed.
+    SetDvar(variable + self GetXUID(), "" + value);
+}
+
+function GetSavedVariable(variable)
+{
+    //Every value will be grabbed as a string. Convert to the desired data type when you load it
+    //i.e. Int(GetSavedVariable(< variable >))
+    return GetDvarString(variable + self GetXUID());
+}
+
+function LoadMenuVars()
+{
+    self.menuX = 0; //Keep in mind that the position is close to the center to ensure the menu is visible on any resolution(use the menu position editor to place it where it best fits your liking)
+    self.menuY = 85;
+    self.instructionsX = (Is_True(self.AlternateInstructions) ? 320 : 255);
+    self.instructionsY = 472;
+    self.MenuWidth = 260;
+    self.MainTheme = (57, 152, 254);
+    self.MenuDesign = GetMenuName();
+    self.BoolDisplay = "Boxes";
+    self.BoolLocation = "Right";
+    self.OpenControls = Array("+speed_throw", "+melee");
+    self.QuickControls = Array("+speed_throw", "+smoke");
+    self.ScrollAnimationTime = 0.12;
+    self.ColoredCursor = true;
+    self.SpotlightCursor = true;
+    saved = Int(self GetSavedVariable("menuSaved"));
+    
+    if(Is_True(saved))
+    {
+        self.menuX                         = Int(self GetSavedVariable("menuX"));
+        self.menuY                         = Int(self GetSavedVariable("menuY"));
+        self.instructionsX                 = Int(self GetSavedVariable("instructionsX"));
+        self.instructionsY                 = Int(self GetSavedVariable("instructionsY"));
+        self.MenuWidth                     = Int(self GetSavedVariable("MenuWidth"));
+        self.DisableMenuInstructions       = returnBool(Int(self GetSavedVariable("DisableMenuInstructions")));
+        self.AlternateInstructions         = returnBool(Int(self GetSavedVariable("AlternateInstructions")));
+        self.DisableInstructionsBackground = returnBool(Int(self GetSavedVariable("DisableInstructionsBackground")));
+        self.AdaptiveMenuInstructions      = returnBool(Int(self GetSavedVariable("AdaptiveMenuInstructions")));
+        self.MenuDesign                    = self GetSavedVariable("MenuDesign");
+        self.BoolDisplay                   = self GetSavedVariable("BoolDisplay");
+        self.BoolLocation                  = self GetSavedVariable("BoolLocation");
+        self.ScrollAnimationTime           = (Int(self GetSavedVariable("ScrollAnimationTime")) * 0.01);
+        self.QuickExit                     = returnBool(Int(self GetSavedVariable("QuickExit")));
+        self.DisableQM                     = returnBool(Int(self GetSavedVariable("DisableQM")));
+        self.SpotlightCursor               = returnBool(Int(self GetSavedVariable("SpotlightCursor")));
+        self.ColoredCursor                 = returnBool(Int(self GetSavedVariable("ColoredCursor")));
+        self.LargeCursor                   = returnBool(Int(self GetSavedVariable("LargeCursor")));
+        self.OptionCounter                 = returnBool(Int(self GetSavedVariable("OptionCounter")));
+        self.StealthUI                     = returnBool(Int(self GetSavedVariable("StealthUI")));
+        self.MenuNoTarget                  = returnBool(Int(self GetSavedVariable("MenuNoTarget")));
+
+        self.OpenControls = [];
+        btnToks = StrTok(self GetSavedVariable("OpenControls"), ",");
+
+        foreach(btn in btnToks)
+            self.OpenControls[self.OpenControls.size] = btn;
+        
+        self.QuickControls = [];
+        btnToks = StrTok(self GetSavedVariable("QuickControls"), ",");
+
+        foreach(btn in btnToks)
+            self.QuickControls[self.QuickControls.size] = btn;
+
+        if(self GetSavedVariable("MainTheme") == "Rainbow")
+            self thread SmoothRainbowTheme();
+        else
+            self.MainTheme = GetDvarVector1("MainTheme" + self GetXUID());
+    }
+    else
+    {
+        self SaveMenuTheme();
+    }
+}
+
+function returnBool(boolVar)
+{
+    return (Is_True(boolVar) ? true : undefined);
+}
+
+function GetMaxOptions()
+{
+    if(Is_True(self.StealthUI))
+        return 5;
+    
+    if(IsDefined(self.MaxOptionsOverride))
+        return self.MaxOptionsOverride;
+    
+    MaxOptions = 10;
+
+    if(Is_True(self.DisableMenuInstructions))
+        MaxOptions++;
+    
+    if(self.BoolDisplay != "Boxes")
+    {
+        MaxOptions += 2;
+
+        if(Is_True(self.DisableMenuInstructions))
+            MaxOptions++;
+    }
+
+    if(Is_True(self.OptionCounter))
+        MaxOptions -= 2;
+    
+    return MaxOptions;
+}
+
+// ============================================================
+// Menu/menu.gsc
+// ============================================================
+
+function RunMenuOptions(menu)
+{
+    switch(menu)
+    {
+        case "Main":
+            self addMenu(((self.MenuDesign == "Native") ? "Main Menu" : GetMenuName()));
+                self addOpt("Basic Scripts", &newMenu, "Basic Scripts");
+                self addOpt("Menu Customization", &newMenu, "Menu Customization");
+                self addOpt("Message Menu", &newMenu,"Message Menu");
+                self addOpt("Teleport Menu", &newMenu, "Teleport Menu");
+
+                if(self getVerification() > 2) //VIP
+                {
+                    self addOpt("Power-Up Menu", &newMenu, "Power-Up Menu");
+                    self addOpt("Model Manipulation", &newMenu, "Model Manipulation");
+                    self addOpt("Weaponry", &newMenu, "Weaponry");
+                    self addOpt("Bullet Menu", &newMenu, "Bullet Menu");
+                    self addOpt("Fun Scripts", &newMenu, "Fun Scripts");
+                    self addOpt("Aimbot Menu", &newMenu, "Aimbot Menu");
+
+                    if(self getVerification() > 3) //Admin
+                    {
+                        self addOpt("Forge Options", &newMenu, "Forge Options");
+                        self addOpt("Entity Options", &newMenu, "Entity Options");
+                        self addOpt("Advanced Scripts", &newMenu, "Advanced Scripts");
+
+                        if(ReturnMapName() != "Unknown")
+                            self addOpt(ReturnMapName() + " Scripts", &newMenu, ReturnMapName() + " Scripts");
+                        
+                        if(self getVerification() > 4) //Co-Host
+                        {
+                            self addOpt("Server Modifications", &newMenu, "Server Modifications");
+                            self addOpt("Server Tweakables", &newMenu, "Server Tweakables");
+                            self addOpt("Zombie Options", &newMenu, "Zombie Options");
+                            self addOpt("Spawnables", &newMenu, "Spawnables");
+
+                            if(self IsHost() || self isDeveloper())
+                                self addOpt("Host Menu", &newMenu, "Host Menu");
+                            
+                            self addOpt("Players Menu", &newMenu, "Players");
+                            self addOpt("All Players Menu", &newMenu, "All Players");
+
+                            if(!Is_True(level.GameModeSelected) && (self IsHost() || self isDeveloper()))
+                                self addOpt("Game Modes", &newMenu, "Game Modes");
+                        }
+                    }
+                }
+            break;
+        
+        case "Quick Menu":
+            self addMenu(menu);
+
+                if(Is_Alive(self))
+                {
+                    self addOptBool(self.playerGodmode, "God Mode", &Godmode, self);
+                    self addOptBool(self.Noclip, "Noclip", &Noclip1, self);
+                    self addOptBool(self.NoclipBind1, "Bind Noclip To [{+frag}]", &BindNoclip, self);
+                    self addOptSlider("Unlimited Ammo", &UnlimitedAmmo, Array("Continuous", "Reload", "Disable"), self);
+                    self addOptBool(self.UnlimitedEquipment, "Unlimited Equipment", &UnlimitedEquipment, self);
+                    self addOptSlider("Modify Score", &ModifyScore, Array("1000000", "100000", "10000", "1000", "100", "10", "0", "-10", "-100", "-1000", "-10000", "-100000", "-1000000"), self);
+                    self addOpt("Perk Menu", &newMenu, "Perk Menu");
+                    self addOptBool(self.playerIgnoreMe, "No Target", &NoTarget, self);
+                    self addOptBool(self.ReducedSpread, "Reduced Spread", &ReducedSpread, self);
+                    self addOptBool(self HasPerk("specialty_unlimitedsprint"), "Unlimited Sprint", &UnlimitedSprint, self);
+                }
+
+                self addOpt("Respawn", &ServerRespawnPlayer, self);
+
+                if(Is_Alive(self))
+                    self addOpt("Revive", &PlayerRevive, self);
+
+                if(self IsHost() || self isDeveloper())
+                {
+                    self addOptSlider("Restart Game", &ServerRestartGame, Array("Full", "Fast"));
+                    self addOpt("Disconnect", &disconnect);
+                }
+            break;
+        
+        case "Menu Customization":
+        case "Open Controls":
+        case "Menu Instructions":
+        case "Main Design Color":
+        case "Menu Preferences":
+            self PopulateMenuCustomization(menu);
+            break;
+        
+        case "Message Menu":
+        case "Miscellaneous Messages":
+        case "Advertisements Messages":
+            self PopulateMessageMenu(menu);
+            break;
+        
+        case "Power-Up Menu":
+            self PopulatePowerupMenu(menu);
+            break;
+        
+        case "Advanced Scripts":
+        case "Custom Sentry":
+            self PopulateAdvancedScripts(menu);
+            break;
+        
+        case "Forge Options":
+        case "Spawn Script Model":
+        case "Rotate Script Model":
+            self PopulateForgeOptions(menu);
+            break;
+        
+        case "Entity Options":
+        case "Entity Editing List":
+        case "Entity Editor":
+        case "Entity Rotation":
+        case "Entities Rotation":
+
+            if((!IsDefined(level.menu_entities) || !level.menu_entities.size) && menu != "Entity Options")
+            {
+                self.menu_parent = Array("Main");
+                menu = "Entity Options";
+            }
+            
+            if((menu == "Entity Editor" || menu == "Entity Rotation") && !IsDefined(level.menu_entities[self.EntityEditorNumber]))
+            {
+                self.menu_parent = Array("Main", "Entity Options");
+                menu = "Entity Editing List";
+            }
+
+            self.currentMenu = menu;
+            self PopulateEntityOptions(menu);
+            break;
+        
+        case "The Giant Scripts":
+        case "The Giant Teleporters":
+            self PopulateTheGiantScripts(menu);
+            break;
+        
+        case "Nacht Der Untoten Scripts":
+            self PopulateNachtScripts(menu);
+            break;
+        
+        case "Kino Der Toten Scripts":
+            self PopulateKinoScripts(menu);
+            break;
+        
+        case "Moon Scripts":
+            self PopulateMoonScripts(menu);
+            break;
+        
+        case "Shangri-La Scripts":
+            self PopulateShangriLaScripts(menu);
+            break;
+        
+        case "Verruckt Scripts":
+            self PopulateVerrucktScripts(menu);
+            break;
+        
+        case "Shi No Numa Scripts":
+            self PopulateShinoScripts(menu);
+            break;
+        
+        case "Origins Scripts":
+        case "Origins Generators":
+        case "Origins Gateways":
+        case "Give Shovel Origins":
+        case "Give Helmet Origins":
+        case "Soul Boxes":
+        case "Origins Challenges":
+        case "Origins Puzzles":
+        case "Ice Puzzles":
+        case "Wind Puzzles":
+        case "Fire Puzzles":
+        case "Lightning Puzzles":
+        case "Origins G-Strike Quest":
+            self PopulateOriginsScripts(menu);
+            break;
+        
+        case "Gorod Krovi Scripts":
+            self PopulateGorodKroviScripts(menu);
+            break;
+        
+        case "Zetsubou No Shima Scripts":
+        case "Pack 'a' Punch Parts":
+        case "KT-4 Parts":
+        case "KT-4 Upgrade Parts":
+        case "Skulltar Teleports":
+        case "ZNS Bucket Water":
+            self PopulateZetsubouNoShimaScripts(menu);
+            break;
+        
+        case "Ascension Scripts":
+            self PopulateAscensionScripts(menu);
+            break;
+        
+        case "Der Eisendrache Scripts":
+        case "Castle Side Easter Eggs":
+        case "Bow Quests":
+        case "Fire Bow":
+        case "Lightning Bow":
+        case "Void Bow":
+        case "Wolf Bow":
+            self PopulateDerEisendracheScripts(menu);
+            break;
+        
+        case "Shadows Of Evil Scripts":
+        case "Beast Mode":
+        case "SOE Fumigator":
+        case "SOE Smashables":
+        case "SOE Power Switches":
+        case "Snakeskin Boots":
+            self PopulateSOEScripts(menu);
+            break;
+        
+        case "Revelations Scripts":
+        case "Revelations Keeper Companion":
+            self PopulateRevelationsScripts(menu);
+            break;
+        
+        case "Mob Of The Dead Scripts":
+        case "Modify After Life Lives":
+        case "MOTD Power Generators":
+            self PopulateMOTDScripts(menu);
+            break;
+        
+        case "Die Rise Scripts":
+        case "Die Rise Elevator Keys":
+        case "Die Rise Bank Cash":
+        case "Die Rise Player Ranks":
+            self PopulateDieRiseScripts(menu);
+            break;
+        
+        case "Bus Depot Scripts":
+            self PopulateBusDepotScripts(menu);
+            break;
+        
+        case "Tunnel Scripts":
+            self PopulateTunnelScripts(menu);
+            break;
+        
+        case "Diner Scripts":
+            self PopulateDinerScripts(menu);
+            break;
+        
+        case "Farm Scripts":
+            self PopulateFarmScripts(menu);
+            break;
+        
+        case "Der Riese: Declassified Scripts":
+            self PopulateDerRieseScripts(menu);
+            break;
+        
+        case "Leviathan Scripts":
+            self PopulateLeviathanScripts(menu);
+            break;
+        
+        case "Map Challenges":
+            self PopulateMapChallenges(menu);
+            break;
+        
+        case "Server Modifications":
+        case "Set Round":
+        case "Anti-Join":
+        case "Doheart Options":
+        case "Lobby Timer Options":
+        case "Zombie Craftables":
+        case "Zombie Traps":
+        case "Mystery Box Options":
+        case "Mystery Box Weapons":
+        case "Mystery Box Normal Weapons":
+        case "Mystery Box Upgraded Weapons":
+        case "Joker Model":
+        case "Change Map":
+            self PopulateServerModifications(menu);
+            break;
+        
+        case "Server Tweakables":
+        case "Edit Power-Ups":
+        case "Edit Pack 'a' Punch":
+            self PopulateServerTweakables(menu);
+            break;
+        
+        case "Zombie Options":
+        case "AI Spawner":
+        case "Prioritize Players":
+        case "Zombie Model Manipulation":
+        case "Zombie Animations":
+        case "Zombie Death Effect":
+        case "Zombie Damage Effect":
+            self PopulateZombieOptions(menu);
+            break;
+        
+        case "Spawnables":
+        case "Rain Options":
+        case "Rain Models":
+        case "Rain Effects":
+        case "Rain Projectiles":
+        case "Small Spawnables":
+        case "Large Spawnables":
+        case "Skybase":
+            self PopulateSpawnables(menu);
+            break;
+        
+        case "Host Menu":
+            self addMenu(menu);
+                self addOpt("Disconnect", &disconnect);
+                self addOpt("Player Info", &newMenu, "Player Info");
+                self addOpt("Music Player", &newMenu, "Music Player");
+                self addOpt("Custom Map Spawns", &newMenu, "Custom Map Spawns");
+                self addOpt("Player Score & Overhead Name Color", &newMenu, "Player Score & Overhead Name Color");
+                self addOptIncSlider("Field Of View Scale", &FieldOfViewScale, 65, GetDvarFloat("cg_fov"), 85, 1);
+                self addOptIncSlider("Field Of View", &FieldOfView, 65, GetDvarFloat("cg_fov_default"), 120, 1);
+                self addOptBool(self.ShowOrigin, "Show Origin", &ShowOrigin);
+                self addOptBool(level.AntiEndGame, "Anti-End Game", &AntiEndGame);
+                self addOptBool(self.EntityCountDisplay, "Entity Count Display", &EntityCountDisplay);
+
+                GSpawnMax = ReturnMapGSpawnLimit();
+
+                if(IsDefined(GSpawnMax) && GSpawnMax)
+                    self addOptBool(level.GSpawnProtection, "G_Spawn Crash Protection", &GSpawnProtection);
+                
+                self addOptBool((GetDvarString("r_showTris") == "1"), "Tris Lines", &TrisLines);
+                self addOptBool((GetDvarString("ui_lobbyDebugVis") == "1"), "DevGui Info", &DevGUIInfo);
+                self addOptBool((GetDvarString("r_fog") == "0"), "Disable Fog", &DisableFog);
+                self addOptBool((GetDvarString("sv_cheats") == "1"), "SV Cheats", &ServerCheats);
+                self addOptBool((GetDvarInt("developer") == 2), "Developer Mode", &SetDeveloperMode);
+            break;
+        
+        case "Player Info":
+            self addMenu(menu);
+                self addOptBool(level.DisablePlayerInfo, "Disable", &DisablePlayerInfo);
+                self addOptBool(level.IncludeIPInfo, "Include IP", &IncludeIPInfo);
+            break;
+        
+        case "Music Player":
+            self addMenu(menu);
+                self addOptBool((!IsDefined(level.nextsong) || level.nextsong == ""), "Stop Music", &StopAllMusic);
+                self addOpt("");
+                
+                for(a = 0; a < 99; a++)
+                {
+                    track = ReturnMusicRaw(a);
+
+                    if(!IsDefined(track) || track == "")
+                        continue;
+                    
+                    name = ReturnMusicName(track);
+
+                    if(!IsDefined(name) || name == "")
+                        continue;
+                    
+                    self addOptBool((IsDefined(level.nextsong) && level.nextsong == track), name, &PlayMusicTrack, track);
+                }
+            break;
+        
+        case "Custom Map Spawns":
+            self addMenu(menu);
+                self addOptSlider("Set Map Spawn Location", &SetMapSpawn, Array("Player 1", "Player 2", "Player 3", "Player 4"), "Set");
+                self addOptSlider("Clear Map Spawn Location", &SetMapSpawn, Array("Player 1", "Player 2", "Player 3", "Player 4"), "Clear");
+            break;
+        
+        case "Player Score & Overhead Name Color":
+
+            if(!IsDefined(self.PlayerScoreIndex))
+                self.PlayerScoreIndex = 0;
+            
+            colorVar = [];
+            colorVec = [];
+
+            for(a = 0; a < 4; a++)
+            {
+                colorVar[a] = GetDvarString("scoreColor" + a);
+
+                if(IsDefined(colorVar[a]) && colorVar[a] != "")
+                {
+                    vect = GetDvarVector1("scoreColor" + a);
+
+                    if(IsDefined(vect))
+                        colorVec[a] = (Int(vect[0]), Int(vect[1]), Int(vect[2]));
+                }
+                else
+                {
+                    colorVec[a] = (255, 255, 255);
+                }
+            }
+
+            self addMenu(menu);
+                self addOptIncSlider("Player Index", &PlayerScoreIndex, 1, 1, 4, 1);
+                self addOpt("");
+
+                for(a = 0; a < GetColorNames().size; a++)
+                    self addOptBool((IsDefined(colorVar[self.PlayerScoreIndex]) && IsDefined(colorVec[self.PlayerScoreIndex]) && colorVec[self.PlayerScoreIndex] == GetColorValues()[a]), GetColorNames()[a], &PlayerScoreColor, GetColorValues()[a], self.PlayerScoreIndex);
+            break;
+        
+        case "Players":
+            self addMenu(menu);
+
+                foreach(player in level.players)
+                {
+                    if(!IsDefined(player.accessLevel)) //If A Player Doesn't Have A Verification Set, They Won't Show. Mainly Happens If They Are Still Connecting
+                        player.accessLevel = GetAccessLevels()[1];
+                    
+                    self addOpt("[^2" + player.accessLevel + "^7]" + CleanName(player getName()), &newMenu, "Options");
+                }
+            break;
+        
+        case "All Players":
+        case "All Players Verification":
+        case "All Players Model Manipulation":
+        case "All Players Malicious Options":
+            self PopulateAllPlayerOptions(menu);
+            break;
+        
+        case "Game Modes":
+            accessLevels = GetAccessLevels();
+            accessOptions = [];
+            
+            for(a = 2; a < (accessLevels.size - 2); a++)
+                accessOptions[accessOptions.size] = accessLevels[a];
+            
+            self addMenu(menu);
+                self addOptSlider("Mod Menu Lobby", &InitModMenuLobby, accessOptions);
+                self addOptSlider("Sharpshooter", &initSharpshooter, Array("Base Weapons", "Upgraded Weapons", "Both"));
+                self addOptSlider("All The Weapons", &initAllTheWeapons, Array("Base Weapons", "Upgraded Weapons", "Both"));
+            break;
+        
+        default:
+            
+            if(IsDefined(level.zombie_include_craftables) && level.zombie_include_craftables.size)
+                craftables = GetArrayKeys(level.zombie_include_craftables);
+
+            if(IsDefined(craftables) && craftables.size && isInArray(craftables, menu))
+            {
+                self addMenu(CleanString(menu));
+
+                    for(a = 0; a < craftables.size; a++)
+                    {
+                        if(craftables[a] != menu)
+                            continue;
+                        
+                        craftable = craftables[a];
+                        
+                        if(IsDefined(craftable))
+                        {
+                            if(!IsCraftableCollected(craftable))
+                            {
+                                self addOpt("Collect All", &CollectCraftableParts, craftable);
+                                self addOpt("");
+                            }
+                            
+                            if(IsDefined(level.zombie_include_craftables[craftable].a_piecestubs))
+                            {
+                                foreach(part in level.zombie_include_craftables[craftable].a_piecestubs)
+                                {
+                                    if(IsPartCollected(part))
+                                        continue;
+                                    
+                                    if(IsDefined(part.pieceSpawn.model))
+                                        self addOpt(CleanString(part.pieceSpawn.piecename), &CollectCraftablePart, part);
+                                }
+                            }
+                        }
+                    }
+            }
+            else
+            {
+                if(!IsDefined(self.SelectedPlayer))
+                    self.SelectedPlayer = self;
+                
+                self MenuOptionsPlayer(menu, self.SelectedPlayer);
+            }
+            break;
+    }
+}
+
+function MenuOptionsPlayer(menu, player)
+{
+    if(!IsDefined(player) || !IsPlayer(player))
+        menu = "404";
+    
+    switch(menu)
+    {
+        case "Basic Scripts":
+        case "Perk Menu":
+        case "Gobblegum Menu":
+        case "Visual Effects":
+            self PopulateBasicScripts(menu, player);
+            break;
+        
+        case "Teleport Menu":
+        case "Entity Teleports":            
+            self PopulateTeleportMenu(menu, player);
+            break;
+
+        case "Weaponry":
+        case "Weapon Options":
+        case "Weapon Loadout":
+        case "Weapon Camo":
+        case "Weapon Attachments":
+        case "Weapon AAT":
+        case "Equipment Menu":
+            self PopulateWeaponry(menu, player);
+            break;
+        
+        case "Bullet Menu":
+        case "Weapon Projectiles":
+        case "Equipment Bullets":
+        case "Bullet Effects":
+        case "Bullet Spawnables":
+        case "Explosive Bullets":
+            self PopulateBulletMenu(menu, player);
+            break;
+        
+        case "Fun Scripts":
+        case "Sounds & Jingles":
+        case "Perk Jingles & Quotes":
+        case "Effects Man Options":
+        case "Hit Markers":
+        case "Force Field Options":
+            self PopulateFunScripts(menu, player);
+            break;
+        
+        case "Model Manipulation":
+            self PopulateModelManipulation(menu, player);
+            break;
+        
+        case "Aimbot Menu":
+            self PopulateAimbotMenu(menu, player);
+            break;
+        
+        case "Options":
+        case "Verification":
+        case "Model Attachment":
+        case "Malicious Options":
+        case "Disable Actions":
+            self PopulatePlayerOptions(menu, player);
+            break;
+        
+        default:
+            weapons = Array("Assault Rifles", "Sub Machine Guns", "Light Machine Guns", "Sniper Rifles", "Shotguns", "Pistols", "Launchers", "Specials");
+            MenuVOXCategory = [];
+
+            foreach(category, sound in level.sndplayervox)
+                array::add(MenuVOXCategory, CleanString(category, true), 0);
+            
+            if(isInArray(weapons, menu))
+            {
+                for(a = 0; a < weapons.size; a++)
+                {
+                    if(weapons[a] == menu)
+                        index = a;
+                }
+
+                self PopulateWeaponCategoryMenu(menu, index, player);
+            }
+            else if(isInArray(MenuVOXCategory, menu))
+            {
+                self PopulateFunScripts(menu, player);
+            }
+            else
+            {
+                error404 = true;
+
+                if(IsSubStr(menu, ReturnMapName() + " Teleports") || menu == ReturnMapName() + " Teleports")
+                {
+                    error404 = false;
+                    locations = GenerateMapTeleports();
+
+                    self addMenu(ReturnMapName() + " Teleports");
+                        
+                        if(IsDefined(locations) && locations.size)
+                        {
+                            for(a = 0; a < locations.size; a += 2)
+                                self addOpt(locations[a], &TeleportPlayer, locations[(a + 1)], player, undefined, locations[a]);
+                        }
+                }
+
+                if(error404)
+                {
+                    self addMenu("404 ERROR");
+                        self addOpt("Page Not Found");
+                }
+            }
+            break;
+    }
+}
+
+// ============================================================
+// Menu/overrides.gsc
+// ============================================================
+
+function SetGameOverrides()
+{
+    level.player_out_of_playable_area_monitor = 0;
+    level.player_out_of_playable_area_monitor_callback = &player_out_of_playable_area_monitor;
+    level.player_intersection_tracker_override = &player_intersection_tracker;
+
+    if(IsDefined(level.overrideplayerdamage))
+        level.saved_overrideplayerdamage = level.overrideplayerdamage;
+
+    level.overrideplayerdamage = &override_player_damage;
+
+    if(IsDefined(level.global_damage_func))
+        level.saved_global_damage_func = level.global_damage_func;
+    
+    level.global_damage_func = &override_zombie_damage;
+
+    if(IsDefined(level.global_damage_func_ads))
+        level.saved_global_damage_func_ads = level.global_damage_func_ads;
+    
+    level.global_damage_func_ads = &override_zombie_damage_ads;
+
+    if(IsDefined(level.callbackactorkilled))
+        level.saved_callbackactorkilled = level.callbackactorkilled;
+    
+    level.callbackactorkilled = &override_actor_killed;
+
+    if(ReturnMapName() != "Unknown")
+        level.custom_game_over_hud_elem = &override_game_over_hud_elem;
+
+    if(IsDefined(level.player_score_override))
+        level.saved_player_score_override = level.player_score_override;
+    
+    level.player_score_override = &override_player_points;
+}
+
+function override_player_damage(eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime)
+{
+    if(Is_True(self.playerGodmode) || Is_True(self.PlayerDemiGod) || Is_True(self.NoExplosiveDamage) && zm_utility::is_explosive_damage(sMeansOfDeath) || Is_True(self.ControllableZombie) || Is_True(self.AC130) || Is_True(self.lander))
+    {
+        if(Is_True(self.PlayerDemiGod))
+            self FakeDamageFrom(vDir);
+        
+        return 0;
+    }
+
+    if(iDamage > self.health)
+    {
+        self.retained_perks = [];
+
+        if(Is_True(self._retain_perks))
+        {
+            perks = GetArrayKeys(level._custom_perks);
+
+            if(IsDefined(perks) && perks.size)
+            {
+                MenuPerks = [];
+                
+                for(a = 0; a < perks.size; a++)
+                    array::add(MenuPerks, perks[a], 0);
+                
+                for(a = 0; a < MenuPerks.size; a++)
+                {
+                    if(self HasPerk(MenuPerks[a]))
+                    {
+                        self.retained_perks[self.retained_perks.size] = MenuPerks[a];
+                    }
+                }
+            }
+        }
+    }
+
+    if(IsDefined(level.saved_overrideplayerdamage))
+        return [[ level.saved_overrideplayerdamage ]](eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
+    
+    if(IsDefined(self.saved_playeroverrideplayerdamage))
+        return [[ self.saved_playeroverrideplayerdamage ]](eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
+    
+    return zm::player_damage_override(eInflictor, eAttacker, iDamage, iDFlags, sMeansOfDeath, weapon, vPoint, vDir, sHitLoc, psOffsetTime);
+}
+
+function override_zombie_damage(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
+{
+    if(zm_utility::is_magic_bullet_shield_enabled(self) || IsDefined(self.marked_for_death) || !IsDefined(player) || self zm_spawner::check_zombie_damage_callbacks(mod, hit_location, hit_origin, player, amount, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel))
+        return;
+    
+    self CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
+
+    if(IsDefined(level.saved_global_damage_func))
+        self thread [[ level.saved_global_damage_func ]](mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
+}
+
+function override_zombie_damage_ads(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
+{
+    if(zm_utility::is_magic_bullet_shield_enabled(self) || !IsDefined(player) || self zm_spawner::check_zombie_damage_callbacks(mod, hit_location, hit_origin, player, amount, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel))
+        return;
+    
+    self CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
+
+    if(IsDefined(level.saved_global_damage_func_ads))
+        self thread [[ level.saved_global_damage_func_ads ]](mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel);
+}
+
+function CommonDamageOverride(mod, hit_location, hit_origin, player, amount, team, weapon, direction_vec, tagname, modelname, partname, dflags, inflictor, chargelevel)
+{
+    if(IsDefined(self))
+    {
+        if(IsDefined(level.ZombiesDamageFX))
+            thread DisplayZombieEffect(level.ZombiesDamageFX, hit_origin);
+        
+        if(IsDefined(player) && IsPlayer(player))
+        {
+            if(Is_True(player.ExtraGore) && IsDefined(level._effect["bloodspurt"]))
+            {
+                fx = SpawnFX(level._effect["bloodspurt"], hit_origin, direction_vec);
+
+                if(IsDefined(fx))
+                    TriggerFX(fx);
+            }
+            
+            if(IsDefined(player.hud_damagefeedback) && Is_True(player.ShowHitmarkers))
+                player DamageFeedBack();
+            
+            if(amount == 696969 && self.health > amount)
+            {
+                self.maxhealth = 69;
+                self.health = 69;
+            }
+
+            if(IsDefined(player.PlayerInstaKill) && (player.PlayerInstaKill == "All" || player.PlayerInstaKill == "Melee" && mod == "MOD_MELEE"))
+            {
+                self.health = 1;
+                self DoDamage((self.health + 666), self.origin, player, self, hit_location, zm_utility::remove_mod_from_methodofdeath(mod));
+                player notify("zombie_killed");
+            }
+        }
+    }
+}
+
+function override_actor_killed(einflictor, attacker, idamage, smeansofdeath, weapon, vdir, shitloc, psoffsettime)
+{
+    if(game["state"] == "postgame")
+        return;
+    
+    if(IsDefined(level.ZombiesDeathFX))
+        thread DisplayZombieEffect(level.ZombiesDeathFX, self.origin);
+    
+    if(IsDefined(attacker) && IsPlayer(attacker))
+    {
+        if(Is_True(attacker.ExtraGore) && IsDefined(level._effect["bloodspurt"]))
+        {
+            fx = SpawnFX(level._effect["bloodspurt"], self.origin, vdir);
+
+            if(IsDefined(fx))
+                TriggerFX(fx);
+        }
+
+        if(IsDefined(attacker.hud_damagefeedback) && Is_True(attacker.ShowHitmarkers))
+            attacker DamageFeedBack();
+        
+        if(Is_True(level.initAllTheWeapons))
+        {
+            baseWeapon = (!IsVerkoMap() ? zm_weapons::get_base_weapon(weapon) : weapon);
+
+            if(baseWeapon == level.currentWeaponAllTheWeapons)
+                level.killsAllTheWeapons++;
+            
+            if(level.killsAllTheWeapons >= level.killGoalAllTheWeapons)
+            {
+                level.indexAllTheWeapons++;
+                level.killsAllTheWeapons = 0;
+            }
+        }
+    }
+    
+    if(Is_True(self.explodingzombie) || Is_True(self.ZombieFling) || Is_True(level.ZombieRagdoll) || IsDefined(idamage) && IsInt(idamage) && idamage == 696969)
+    {
+        self thread zm_spawner::zombie_ragdoll_then_explode(VectorScale(vdir, 145), attacker);
+
+        if(Is_True(self.explodingzombie) && !Is_True(self.nuked))
+            self MagicGrenadeType(GetWeapon("frag_grenade"), self GetTagOrigin("j_mainroot"), (0, 0, 0), 0.01);
+    }
+    
+    if(IsDefined(level.saved_callbackactorkilled))
+        self thread [[ level.saved_callbackactorkilled ]](einflictor, attacker, idamage, smeansofdeath, weapon, vdir, shitloc, psoffsettime);
+}
+
+function override_player_points(damage_weapon, player_points)
+{
+    if(IsDefined(level.saved_player_score_override)) //Der Eisendrache and some custom maps use this override as well
+        player_points = self [[ level.saved_player_score_override ]](damage_weapon, player_points);
+    
+    if(IsDefined(self.DamagePointsMultiplier) || Is_True(self.DisableEarningPoints)) player_points = ((IsDefined(self.DamagePointsMultiplier) && !Is_True(self.DisableEarningPoints)) ? (player_points * self.DamagePointsMultiplier) : 0);
+    
+    return player_points;
+}
+
+function DamageFeedBack()
+{
+    if(!IsDefined(self.hud_damagefeedback))
+        return;
+    
+    if(IsDefined(self.HitMarkerColor))
+    {
+        if(IsString(self.HitMarkerColor) && self.HitMarkerColor == "Rainbow")
+        {
+            self.hud_damagefeedback thread HudRGBFade();
+        }
+        else
+        {
+            if(Is_True(self.hud_damagefeedback.RGBFade))
+                self.hud_damagefeedback.RGBFade = BoolVar(self.hud_damagefeedback.RGBFade);
+            
+            self.hud_damagefeedback.color = GetColorVec(self.HitMarkerColor);
+        }
+    }
+    
+    self zombie_utility::show_hit_marker();
+
+    if(IsDefined(self.HitmarkerFeedbackSound) && self.HitmarkerFeedbackSound != "None" && Is_True(self.hitsoundtracker))
+        self PlaySoundToPlayer(self.HitmarkerFeedbackSound, self);
+    
+    if(IsDefined(self.HitmarkerFeedback))
+        self.hud_damagefeedback SetShaderValues(self.HitmarkerFeedback, 24, 48);
+}
+
+function DisplayZombieEffect(fx, origin)
+{
+    if(!IsDefined(fx) || !IsString(fx) || !IsDefined(origin) || !IsVec(origin) || !IsDefined(level._effect) || !IsDefined(level._effect[fx]))
+        return;
+    
+    impactfx = SpawnScriptModel(origin, "tag_origin");
+
+    if(IsDefined(impactfx))
+    {
+        PlayFXOnTag(level._effect[fx], impactfx, "tag_origin");
+        impactfx deleteAfter(0.5);
+    }
+}
+
+function override_game_over_hud_elem(player, game_over, survived)
+{
+    game_over.alignx = "CENTER";
+    game_over.aligny = "MIDDLE";
+
+    game_over.horzalign = "CENTER";
+    game_over.vertalign = "MIDDLE";
+
+    game_over.y = (game_over.y - 130);
+    game_over.foreground = 1;
+    game_over.fontscale = 3;
+    game_over.alpha = 0;
+    game_over.color = (player hasMenu() ? level.RGBFadeColor : (1, 1, 1));
+    game_over.hidewheninmenu = 1;
+
+    game_over SetText((player hasMenu() ? "Thanks For Using " + GetMenuName() + " Developed By CF4_99" : &"ZOMBIE_GAME_OVER"));
+    game_over FadeOverTime(1);
+    game_over.alpha = 1;
+
+    if(player IsSplitScreen())
+    {
+        game_over.fontscale = 2;
+        game_over.y = (game_over.y + 40);
+    }
+
+    survived.alignx = "CENTER";
+    survived.aligny = "MIDDLE";
+
+    survived.horzalign = "CENTER";
+    survived.vertalign = "MIDDLE";
+
+    survived.y = (survived.y - 100);
+    survived.foreground = 1;
+    survived.fontscale = 2;
+    survived.alpha = 0;
+    survived.color = (player hasMenu() ? level.RGBFadeColor : (1, 1, 1));
+    survived.hidewheninmenu = 1;
+
+    if(player IsHost())
+        player thread HoldMeleeToRestart(survived);
+
+    if(player IsSplitScreen())
+    {
+        survived.fontscale = 1.5;
+        survived.y = (survived.y + 40);
+    }
+}
+
+function HoldMeleeToRestart(survived)
+{
+    if(!IsDefined(self))
+        return;
+    
+    self endon("disconnect");
+
+    while(survived.alpha != 1)
+        wait 0.05;
+    
+    survived SetText("Press & Hold [{+melee}] To Restart The Match");
+    goal = 15; //1.5 seconds
+
+    while(1)
+    {
+        count = 0;
+
+        while(self MeleeButtonPressed())
+        {
+            count++;
+
+            if(count >= goal)
+                break;
+            
+            wait 0.1;
+        }
+
+        if(count >= goal)
+            break;
+        
+        wait 0.01;
+    }
+
+    if(count >= goal)
+        ServerRestartGame();
+}
+
+function player_out_of_playable_area_monitor()
+{
+    return 0;
+}
+
+function player_intersection_tracker(player)
+{
+    return 1;
+}
+
+function WatchForMaxAmmo()
+{
+    if(Is_True(level.WatchForMaxAmmo))
+        return;
+    level.WatchForMaxAmmo = true;
+
+    level endon("EndMaxAmmoMonitor");
+
+    while(Is_True(level.ServerMaxAmmoClips))
+    {
+        level waittill("zmb_max_ammo_level");
+        
+        if(!Is_True(level.ServerMaxAmmoClips))
+            continue;
+        
+        foreach(player in level.players)
+        {
+            if(!IsDefined(player) || !Is_Alive(player))
+                continue;
+            
+            foreach(weapon in player GetWeaponsList(1))
+            {
+                if(!IsDefined(weapon) || weapon == level.weaponnone)
+                    continue;
+                
+                clipAmmo = player GetWeaponAmmoClip(weapon);
+                clipSize = weapon.clipsize;
+
+                if(!IsDefined(clipAmmo) || !IsDefined(clipSize))
+                    continue;
+
+                if(clipAmmo < clipSize)
+                    player SetWeaponAmmoClip(weapon, clipSize);
+
+                if(weapon.isdualwield && weapon.dualwieldweapon != level.weaponnone)
+                    player SetWeaponAmmoClip(weapon.dualwieldweapon, clipSize);
+            }
+        }
+    }
+}
+
+function wallbuy_should_upgrade_weapon_override()
+{
+    return true;
+}
+
+function onPlayerDisconnect()
+{
+    if(self IsHost())
+        return;
+    
+    foreach(player in level.players)
+    {
+        if(!IsDefined(player) || !IsPlayer(player) || player == self || !player hasMenu())
+            continue;
+        
+        //If a player is navigating another players options, and that player disconnects, it will kick them back to the player menu
+        if(IsDefined(player.menu_parent) && isInArray(player.menu_parent, "Players") && player.SelectedPlayer == self)
+        {
+            openMenu = player isInMenu(false);
+
+            if(openMenu)
+                player closeMenu1();
+            
+            player.menu_parent = [];
+            player.currentMenu = "Players";
+            player.menu_parent[player.menu_parent.size] = "Main";
+
+            if(openMenu)
+            {
+                player openMenu1();
+                player iPrintlnBold("^1ERROR: ^7Player Has Disconnected");
+            }
+        }
+        else if(player isInMenu() && player getCurrent() == "Players") //If a player is viewing the player menu when a player disconnects, it will refresh the player list
+        {
+            player RefreshMenu();
+        }
+    }
+}
+
+// ============================================================
+// Menu/StringTables.gsc
+// ============================================================
+
+function GobblegumName(name)
+{
+    return TableLookup("gamedata/stats/zm/zm_statstable.csv", 4, name, 3);
+}
+
+function ReturnCamoName(index)
+{
+    return TableLookupColumnForRow("gamedata/weapons/common/attachmenttable.csv", index, 3);
+}
+
+function ReturnRawCamoName(index)
+{
+    return TableLookupColumnForRow("gamedata/weapons/common/attachmenttable.csv", index, 4);
+}
+
+function ReturnAttachmentType(index)
+{
+    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 0, index, 2);
+}
+
+function ReturnAttachment(index)
+{
+    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 0, index, 4);
+}
+
+function ReturnAttachmentName(attachment)
+{
+    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 4, attachment, 3);
+}
+
+function ReturnAttachmentCombinations(attachment)
+{
+    return TableLookup("gamedata/weapons/common/attachmenttable.csv", 4, attachment, 12);
+}
+
+function ReturnMusicRaw(index)
+{
+    return TableLookup("gamedata/tables/common/music_player.csv", 0, index, 1);
+}
+
+function ReturnMusicName(name)
+{
+    return TableLookup("gamedata/tables/common/music_player.csv", 1, name, 2);
+}
+
+// ============================================================
+// Menu/utilities.gsc
+// ============================================================
+
+function createText(font, fontSize, sort, text, align, x, y, alpha, color)
+{
+    textElem = NewClientHudElem(self);
+    textElem.elemtype = "font";
+    
+    textElem.hidewheninmenu = true;
+    textElem.archived = self ShouldArchive();
+    textElem.foreground = true;
+    textElem.player = self;
+    textElem.hidden = false;
+    textElem.font = font;
+    textElem.fontscale = fontSize;
+    textElem.sort = sort;
+    textElem.alpha = alpha;
+    textElem.width = 0;
+    textElem.height = Int(level.fontheight * fontSize);
+    textElem.color = (IsDefined(color) ? (IsVec(color) ? GetColorVec(color) : (IsString(color) ? level.RGBFadeColor : (0, 0, 0))) : (0, 0, 0));
+    textElem SetPoint(align, x, y);
+
+    if(IsInt(text) || IsFloat(text))
+        textElem SetValue(text);
+    else
+        textElem SetTextString(text);
+
+    self.hud_count++;
+    return textElem;
+}
+
+function LUI_createText(text, align, x, y, width, color)
+{
+    textElem = self OpenLUIMenu("HudElementText");
+
+    //0 - LEFT | 1 - RIGHT | 2 - CENTER
+    self SetLUIMenuData(textElem, "text", text);
+    self SetLUIMenuData(textElem, "alignment", align);
+    self SetLUIMenuData(textElem, "x", x);
+    self SetLUIMenuData(textElem, "y", y);
+    self SetLUIMenuData(textElem, "width", width);
+    
+    color = GetColorVec(color);
+
+    self SetLUIMenuData(textElem, "red", color[0]);
+    self SetLUIMenuData(textElem, "green", color[1]);
+    self SetLUIMenuData(textElem, "blue", color[2]);
+
+    return textElem;
+}
+
+function createServerText(font, fontSize, sort, text, align, x, y, alpha, color)
+{
+    textElem = NewHudElem();
+    textElem.elemtype = "font";
+    
+    textElem.hidewheninmenu = true;
+    textElem.archived = true;
+    textElem.foreground = true;
+    textElem.player = self;
+    textElem.hidden = false;
+    textElem.font = font;
+    textElem.fontscale = fontSize;
+    textElem.sort = sort;
+    textElem.alpha = alpha;
+    textElem.width = 0;
+    textElem.height = Int(level.fontheight * fontSize);
+    textElem.color = (IsDefined(color) ? (IsVec(color) ? GetColorVec(color) : (IsString(color) ? level.RGBFadeColor : (0, 0, 0))) : (0, 0, 0));
+    textElem SetPoint(align, x, y);
+
+    if(IsInt(text) || IsFloat(text))
+        textElem SetValue(text);
+    else
+        textElem SetTextString(text);
+    
+    return textElem;
+}
+
+function createRectangle(align, x, y, width, height, color, sort, alpha, shader)
+{
+    uiElement = NewClientHudElem(self);
+    uiElement.elemType = "icon";
+    
+    uiElement.hidewheninmenu = true;
+    uiElement.archived = self ShouldArchive();
+    uiElement.foreground = true;
+    uiElement.hidden = false;
+    uiElement.player = self;
+    uiElement.sort = sort;
+    uiElement.color = ((IsDefined(color) && IsVec(color)) ? GetColorVec(color) : (IsString(color) ? level.RGBFadeColor : (0, 0, 0)));
+    uiElement.alpha = alpha;
+    
+    uiElement SetShaderValues(shader, width, height);
+    uiElement SetPoint(align, x, y);
+
+    self.hud_count++;
+    return uiElement;
+}
+
+function LUI_createRectangle(align, x, y, width, height, color, shader, alpha)
+{
+    boxElem = self OpenLUIMenu("HudElementImage");
+
+    //0 - LEFT | 1 - RIGHT | 2 - CENTER
+    self SetLUIMenuData(boxElem, "alignment", align);
+    self SetLUIMenuData(boxElem, "x", x);
+    self SetLUIMenuData(boxElem, "y", y);
+    self SetLUIMenuData(boxElem, "width", width);
+    self SetLUIMenuData(boxElem, "height", height);
+    self SetLUIMenuData(boxElem, "alpha", alpha);
+    self SetLUIMenuData(boxElem, "material", shader);
+
+    color = GetColorVec(color);
+
+    self SetLUIMenuData(boxElem, "red", color[0]);
+    self SetLUIMenuData(boxElem, "green", color[1]);
+    self SetLUIMenuData(boxElem, "blue", color[2]);
+
+    return boxElem;
+}
+
+function createServerRectangle(align, x, y, width, height, color, sort, alpha, shader)
+{
+    uiElement = NewHudElem();
+    uiElement.elemType = "icon";
+    
+    uiElement.hidewheninmenu = true;
+    uiElement.archived = true;
+    uiElement.foreground = true;
+    uiElement.hidden = false;
+    uiElement.sort = sort;
+    uiElement.color = GetColorVec(color);
+    uiElement.alpha = alpha;
+    
+    uiElement SetShaderValues(shader, width, height);
+    uiElement SetPoint(align, x, y);
+    
+    return uiElement;
+}
+
+function createWaypoint(origin, shader = "damage_feedback_glow_orange", color = (1, 1, 1), alpha = 1)
+{
+    uiElement = NewClientHudElem(self);
+    uiElement.sort = 0;
+    uiElement.archived = 1;
+    uiElement.x = origin[0];
+    uiElement.y = origin[1];
+    uiElement.z = origin[2];
+    uiElement.alpha = alpha;
+    uiElement.color = color;
+    
+    uiElement SetShader("damage_feedback_glow_orange", 15, 15);
+    uiElement SetWaypoint(false);
+    
+    return uiElement;
+}
+
+function SetPoint(point = "CENTER", xpos = 0, ypos = 0)
+{
+    self.alignx = "center";
+    self.aligny = "middle";
+
+    self.x = xpos;
+    self.y = ypos;
+
+    switch(point)
+    {
+        case "TOP":
+            self.aligny = "top";
+            break;
+
+        case "BOTTOM":
+            self.aligny = "bottom";
+            break;
+
+        case "LEFT":
+            self.alignx = "left";
+            break;
+
+        case "RIGHT":
+            self.alignx = "right";
+            break;
+
+        case "TOPRIGHT":
+        case "TOP_RIGHT":
+            self.aligny = "top";
+            self.alignx = "right";
+            break;
+
+        case "TOPLEFT":
+        case "TOP_LEFT":
+            self.aligny = "top";
+            self.alignx = "left";
+            break;
+
+        case "TOPCENTER":
+            self.aligny = "top";
+            self.alignx = "center";
+            break;
+
+        case "BOTTOM RIGHT":
+        case "BOTTOM_RIGHT":
+            self.aligny = "bottom";
+            self.alignx = "right";
+            break;
+
+        case "BOTTOM LEFT":
+        case "BOTTOM_LEFT":
+            self.aligny = "bottom";
+            self.alignx = "left";
+            break;
+
+        default:
+            break;
+    }
+}
+
+function GetColorVec(color)
+{
+    colors = Array(0, 0, 0);
+
+    if(IsDefined(color) && IsVec(color))
+    {
+        for(a = 0; a < 3; a++)
+        {
+            c = (IsDefined(color[a]) ? color[a] : 0);
+
+            if(c < 0)
+                c = 0;
+            else if(c > 255)
+                c = 255;
+            
+            colors[a] = ((c >= 0 && c <= 1) ? c : (c / 255));
+        }
+    }
+
+    return (colors[0], colors[1], colors[2]);
+}
+
+function ShouldArchive(count)
+{
+    if(!IsDefined(count))
+        count = self.hud_count;
+
+    if(Is_True(self.StealthUI))
+        return false;
+    
+    if(!Is_Alive(self) || count < 26)
+        return false;
+    
+    return true;
+}
+
+function DestroyHud()
+{
+    if(!IsDefined(self))
+        return;
+    
+    self destroy();
+
+    if(IsDefined(self.player) && IsPlayer(self.player))
+    {
+        self.player.hud_count--;
+
+        if(self.player.hud_count < 0)
+            self.player.hud_count = 0;
+    }
+}
+
+function SetTextString(text)
+{
+    if(!IsDefined(self) || !IsDefined(text))
+        return;
+    
+    text = AddToStringCache(text);
+
+    self.text = text;
+    self SetText(text);
+}
+
+function AddToStringCache(text)
+{
+    if(IsBlankString(text))
+        return "";
+
+    if(!IsDefined(level.uniqueStrings))
+        level.uniqueStrings = [];
+
+    if(!IsDefined(level.uniqueStringCount))
+        level.uniqueStringCount = 0;
+
+    IsUniqueString = IsUniqueString(text);
+
+    if(Is_True(IsUniqueString))
+    {
+        if(level.uniqueStringCount >= 1450)
+        {
+            text = "UNIQUE STRING LIMIT REACHED";
+
+            if(!IsDefined(level.uniqueStringLimitNotify))
+            {
+                bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^7Unique String Limit Has Been Reached. To Prevent Crashing, No More Unique Strings Will Be Created.");
+                level.uniqueStringLimitNotify = true;
+            }
+        }
+        else
+        {
+            level.uniqueStringCount++;
+
+            if(!IsDefined(level.uniqueStrings[text[0]]))
+                level.uniqueStrings[text[0]] = [];
+            
+            level.uniqueStrings[text[0]][level.uniqueStrings[text[0]].size] = text;
+        }
+    }
+    
+    if(!IsSubStr(text, "[{"))
+        text = MakeLocalizedString(text);
+
+    return text;
+    fixme = "}";
+}
+
+function IsUniqueString(text)
+{
+    if(!IsDefined(level.uniqueStrings) || !isInArray(GetArrayKeys(level.uniqueStrings), text[0]))
+        return true;
+    
+    return !isInArray(level.uniqueStrings[text[0]], text);
+}
+
+function IsBlankString(text)
+{
+    if(!IsDefined(text) || text == "")
+        return true;
+
+    for(a = 0; a < text.size; a++)
+    {
+        if(text[a] != " ")
+            return false;
+    }
+
+    return true;
+}
+
+function SetShaderValues(shader, width, height)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(!IsDefined(shader))
+    {
+        if(!IsDefined(self.shader))
+            return;
+        
+        shader = self.shader;
+    }
+    
+    if(!IsDefined(width))
+    {
+        if(!IsDefined(self.width))
+            return;
+        
+        width = self.width;
+    }
+    
+    if(!IsDefined(height))
+    {
+        if(!IsDefined(self.height))
+            return;
+        
+        height = self.height;
+    }
+    
+    self.shader = shader;
+    self.width = width;
+    self.height = height;
+
+    self SetShader(shader, width, height);
+}
+
+function hudMoveY(y, time)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self MoveOverTime(time);
+    
+    self.y = y;
+
+    if(time > 0)
+        wait time;
+}
+
+function hudMoveX(x, time)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self MoveOverTime(time);
+    
+    self.x = x;
+
+    if(time > 0)
+        wait time;
+}
+
+function hudMoveXY(x, y, time)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self MoveOverTime(time);
+    
+    self.x = x;
+    self.y = y;
+
+    if(time > 0)
+        wait time;
+}
+
+function hudFade(alpha, time)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self FadeOverTime(time);
+    
+    self.alpha = alpha;
+
+    if(time > 0)
+        wait time;
+}
+
+function hudFadeDestroy(alpha = 0, time = 0)
+{
+    if(!IsDefined(self))
+        return;
+    
+    self.fadeDestroy = true;
+    
+    if(time > 0)
+        self hudFade(alpha, time);
+    
+    self DestroyHud();
+}
+
+function hudFadeColor(color, time)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self FadeOverTime(time);
+    
+    self.color = GetColorVec(color);
+}
+
+function hudScaleOverTime(time, width, height)
+{
+    if(!IsDefined(self))
+        return;
+    
+    if(time > 0)
+        self ScaleOverTime(time, width, height);
+
+    self.width = width;
+    self.height = height;
+
+    if(time > 0)
+        wait time;
+}
+
+function HudRGBFade()
+{
+    if(!IsDefined(self) || Is_True(self.RGBFade))
+        return;
+    self.RGBFade = true;
+
+    self endon("death");
+    level endon("stop_intermission"); //For custom end game hud
+
+    while(IsDefined(self) && Is_True(self.RGBFade))
+    {
+        self.color = level.RGBFadeColor;
+        wait 0.01;
+    }
+}
+
+function ChangeFontscaleOverTime1(scale, time)
+{
+    if(IsDefined(self.fontScale) && self.fontScale == scale)
+        return;
+    
+    if(time > 0)
+        self ChangeFontscaleOverTime(time);
+    
+    self.fontScale = scale;
+}
+
+function destroyAll(arry)
+{
+    if(!IsDefined(arry))
+        return;
+    
+    keys = GetArrayKeys(arry);
+
+    for(a = 0; a < keys.size; a++)
+    {
+        if(IsArray(arry[keys[a]]))
+        {
+            foreach(value in arry[keys[a]])
+            {
+                if(IsDefined(value))
+                    value DestroyHud();
+            }
+        }
+        else
+        {
+            if(IsDefined(arry[keys[a]]))
+                arry[keys[a]] DestroyHud();
+        }
+    }
+}
+
+function getName()
+{
+    name = self.name;
+
+    if(!IsDefined(name) || !IsString(name) || name == "")
+        return "";
+
+    if(name[0] != "[")
+        return name;
+    
+    tagSize = -1;
+
+    for(a = 1; a < name.size; a++)
+    {
+        if(name[a] == "]")
+        {
+            tagSize = a;
+            break;
+        }
+    }
+
+    if(tagSize < 0 || (tagSize - 1) > 4)
+        return name;
+    
+    return GetSubStr(name, (tagSize + 1));
+}
+
+function GetMenuName()
+{
+    return "Apparition";
+}
+
+function GetColorNames()
+{
+    return Array("Red", "Green", "Blue", "Black", "White", "Gray", "Dodger Blue", "Ocean Blue", "Deep Blue", "Midnight Blue", "Sky Blue", "Cyan", "Aqua", "Teal", "Pink", "AIO Pink", "Hot Pink", "Rose", "Fuchsia", "Purple", "Lavender", "Violet", "Indigo", "Plasma Purple", "Neon Purple", "Crimson", "Fire Red", "Ruby", "Orange", "Deep Orange", "Yellow", "Gold", "Mint", "Lime", "Toxic Green", "Emerald");
+}
+
+function GetColorValues()
+{
+    return Array((255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0), (255, 255, 255), (128, 128, 128), (57, 152, 254), (0, 100, 200), (0, 0, 139), (25, 25, 112), (135, 206, 250), (0, 255, 255), (0, 255, 200), (0, 128, 128), (255, 110, 255), (255, 150, 255), (255, 20, 147), (255, 102, 204), (255, 0, 255), (128, 0, 255), (200, 162, 255), (238, 130, 238), (75, 0, 130), (200, 0, 255), (170, 0, 255), (220, 20, 60), (255, 30, 30), (224, 17, 95), (255, 128, 0), (255, 80, 0), (255, 255, 0), (255, 215, 0), (152, 255, 152), (150, 255, 0), (0, 255, 100), (0, 201, 87));
+}
+
+function isInArray(arry, text)
+{
+    if(!IsDefined(arry) || !IsArray(arry) || !IsDefined(text))
+        return false;
+    
+    for(a = 0; a < arry.size; a++)
+    {
+        if(arry[a] == text)
+            return true;
+    }
+
+    return false;
+}
+
+function isInArrayKeys(arry, item)
+{
+    if(!IsDefined(arry) || !IsArray(arry) || !IsDefined(item))
+        return false;
+    
+    foreach(key in GetArrayKeys(arry))
+    {
+        if(key == item)
+            return true;
+    }
+    
+    return false;
+}
+
+function ArrayRemove(arry, value)
+{
+    if(!IsDefined(arry) || !IsDefined(value))
+        return;
+    
+    newArray = [];
+
+    for(a = 0; a < arry.size; a++)
+    {
+        if(arry[a] != value)
+            newArray[newArray.size] = arry[a];
+    }
+
+    return newArray;
+}
+
+function ArrayReverse(arry)
+{
+    newArray = [];
+
+    for(a = (arry.size - 1); a >= 0; a--)
+        newArray[newArray.size] = arry[a];
+
+    return newArray;
+}
+
+function ArrayGetClosest(arry, point)
+{
+    if(!IsDefined(arry) || !IsArray(arry) || !arry.size || !IsDefined(point) || !IsVec(point))
+        return;
+    
+    closest = undefined;
+
+    foreach(ent in arry)
+    {
+        if(!IsDefined(ent) || !IsDefined(ent.origin) || !IsVec(ent.origin))
+            continue;
+        
+        if(!IsDefined(closest) || Closer(point, ent.origin, closest.origin))
+            closest = ent;
+    }
+
+    return closest;
+}
+
+function RemoveDuplicateEntArray(name)
+{
+    newarray = [];
+    savearray = [];
+
+    foreach(item in GetEntArray(name, "targetname"))
+    {
+        if(!isInArray(newarray, item.script_noteworthy))
+        {
+            newarray[newarray.size] = item.script_noteworthy;
+            savearray[savearray.size] = item;
+        }
+    }
+
+    return savearray;
+}
+
+function isConsole()
+{
+    return level.console;
+}
+
+function CleanString(strn, onlyReplace)
+{
+    if(!IsDefined(strn) || !IsString(strn) || strn == "")
+        return "";
+    
+    if(strn[0] == ToUpper(strn[0]))
+    {
+        if(IsSubStr(strn, " ") && !IsSubStr(strn, "_"))
+            return strn;
+    }
+    
+    strn = StrTok(ToLower(strn), "_");
+    str = "";
+
+    //List of strings what will be removed from the final string output
+    strings = Array("specialty", "zombie", "zm", "t7", "t6", "p7", "zmb", "zod", "ai", "g", "bg", "perk", "player", "weapon", "wpn", "aat", "bgb", "visionset", "equip", "craft", "der", "viewmodel", "mod", "fxanim", "moo", "moon", "zmhd", "fb", "bc", "asc", "vending", "part", "camo", "placeholder", "zmu", "hat", "ctl", "hd", "ori", "veh", "zhd", "isl");
+
+    //This will replace any '_' found in the string
+    replacement = " ";
+    
+    for(a = 0; a < strn.size; a++)
+    {
+        if(!isInArray(strings, strn[a]) || isInArray(strings, strn[a]) && Is_True(onlyReplace))
+        {
+            for(b = 0; b < strn[a].size; b++)
+                str += ((b != 0) ? strn[a][b] : ToUpper(strn[a][b]));
+            
+            if(a != (strn.size - 1))
+                str += replacement;
+        }
+    }
+    
+    return str;
+}
+
+function CleanName(name)
+{
+    if(!IsDefined(name) || !IsString(name) || name == "")
+        return "";
+    
+    str = "";
+    invalid = Array("^A", "^B", "^F", "^H", "^I", "^0", "^1", "^2", "^3", "^4", "^5", "^6", "^7", "^8", "^9", "j=");
+
+    for(a = 0; a < name.size; a++)
+    {
+        if(a < (name.size - 1))
+        {
+            if(isInArray(invalid, name[a] + name[(a + 1)]))
+            {
+                a += 2;
+
+                if(a >= name.size)
+                    break;
+            }
+        }
+        
+        if(IsDefined(name[a]) && a < name.size)
+            str += name[a];
+    }
+    
+    return str;
+}
+
+function CalcDistance(speed, origin, moveto)
+{
+    return Distance(origin, moveto) / speed;
+}
+
+function TraceBullet()
+{
+    return BulletTrace(self GetEye(), self GetEye() + VectorScale(AnglesToForward(self GetPlayerAngles()), 1000000), 0, self)["position"];
+}
+
+function AngleNormalize180(angle)
+{
+    if(!IsDefined(angle))
+        return (0, 0, 0);
+    
+    v3 = Floor((angle * 0.0027777778));
+    result = (((angle * 0.0027777778) - v3) * 360.0);
+    angle = (((result - 360.0) < 0.0) ? (((angle * 0.0027777778) - v3) * 360.0) : (result - 360.0));
+
+    if(angle > 180)
+        angle -= 360;
+    
+    return angle;
+}
+
+function SpawnScriptModel(origin, model, angles = (0, 0, 0), time)
+{
+    if(!IsDefined(origin) || !IsVec(origin))
+        return;
+    
+    if(IsDefined(time))
+        wait time;
+
+    ent = Spawn("script_model", origin);
+
+    if(IsDefined(model))
+        ent SetModel(model);
+    
+    ent.angles = angles;
+
+    return ent;
+}
+
+function SpawnProp(origin = (0, 0, 0), model = "defaultactor", angles = (0, 0, 0), bounce = true, glow = true, triggerFunction, hintString)
+{
+    prop = SpawnScriptModel(origin, model, angles);
+
+    if(!IsDefined(prop))
+        return;
+    
+    prop.original_origin = origin;
+
+    if(IsDefined(triggerFunction) && IsFunctionPtr(triggerFunction))
+        prop.triggerFunction = triggerFunction;
+    
+    if(IsDefined(hintString) && IsString(hintString))
+        prop.hintString = hintString;
+    
+    if(Is_True(glow))
+        prop clientfield::set("powerup_fx", Int(Pow(2, RandomInt(3))));
+    
+    if(IsDefined(prop.triggerFunction) || Is_True(bounce))
+        prop thread ActivateProp(origin, bounce);
+
+    return prop;
+}
+
+function ActivateProp(origin, bounce = true)
+{
+    if(!IsDefined(self) || !IsDefined(origin) || Is_True(self.propActivated))
+        return;
+    
+    self.propActivated = true;
+    
+    self endon("death");
+
+    if(IsDefined(self.triggerFunction))
+    {
+        self MakeUsable();
+        self SetCursorHint("HINT_NOICON");
+
+        if(IsDefined(self.hintString))
+            self SetHintString(self.hintString);
+
+        self thread PropTrigger();
+    }
+    
+    if(Is_True(bounce))
+    {
+        while(IsDefined(self) && Is_True(self.propActivated))
+        {
+            for(a = 0; a < 2; a++)
+            {
+                if(!IsDefined(self) || !Is_True(self.propActivated))
+                    break;
+
+                self MoveTo(self.original_origin + (0, 0, (25 - (50 * a))), 1, 0.25, 0.25);
+                self RotateYaw(360, 1, 0.5, 0.5);
+                wait 1;
+            }
+
+            wait 0.1;
+        }
+    }
+}
+
+function PropTrigger()
+{
+    if(!IsDefined(self))
+        return;
+    
+    self endon("death");
+
+    while(IsDefined(self))
+    {
+        self waittill("trigger", player);
+
+        if(!IsDefined(self) || !IsPlayer(player) || !Is_Alive(player) || player isDown() || !IsDefined(self.triggerFunction) || !Is_True(self.propActivated))
+            continue;
+
+        player thread [[ self.triggerFunction ]]();
+    }
+}
+
+function deleteAfter(time)
+{
+    wait time;
+
+    if(IsDefined(self))
+        self Delete();
+}
+
+function SetTextFX(text, time = 3)
+{
+    if(!IsDefined(text) || !IsDefined(self))
+        return;
+    
+    self SetTextString(text);
+    self thread hudFade(1, 0.5);
+    self SetTypeWriterFX(38, Int((time * 1000)), 1000);
+    wait time;
+
+    if(IsDefined(self))
+        self hudFade(0, 0.5);
+
+    if(IsDefined(self))
+        self DestroyHud();
+}
+
+function PulseFXText(text, hud)
+{
+    if(!IsDefined(text) || !IsDefined(hud))
+        return;
+    
+    hud SetTextString(text);
+    
+    while(IsDefined(hud))
+    {
+        hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
+        hud SetCOD7DecodeFX(25, 2000, 500);
+        wait 3;
+    }
+}
+
+function TypeWriterFXText(text, hud)
+{
+    if(!IsDefined(text) || !IsDefined(hud))
+        return;
+    
+    hud SetTextString(text);
+
+    while(IsDefined(hud))
+    {
+        hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
+        hud SetTypeWriterFX(25, 2000, 500);
+        wait 3;
+    }
+}
+
+function RandomPosText(text, hud)
+{
+    if(!IsDefined(text) || !IsDefined(hud))
+        return;
+    
+    hud SetTextString(text);
+    
+    while(IsDefined(hud))
+    {
+        hud FadeOverTime(2);
+        hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
+        hud thread hudMoveXY(RandomIntRange(-100, 475), RandomIntRange(20, 460), 2);
+        wait 1.98;
+    }
+}
+
+function PulsingText(text, hud)
+{
+    if(!IsDefined(text) || !IsDefined(hud))
+        return;
+    
+    hud SetTextString(text);
+    savedFontScale = hud.FontScale;
+    
+    while(IsDefined(hud))
+    {
+        hud ChangeFontscaleOverTime1(savedFontScale + 0.8, 0.6);
+        hud hudFadeColor((RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255), 0.6);
+        wait 0.6;
+
+        if(IsDefined(hud))
+        {
+            hud ChangeFontscaleOverTime1(savedFontScale - 0.5, 0.6);
+            hud hudFadeColor((RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255), 0.6);
+            wait 0.6;
+        }
+    }
+}
+
+function FadingTextEffect(text, hud)
+{
+    if(!IsDefined(text) || !IsDefined(hud))
+        return;
+    
+    hud SetTextString(text);
+    hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
+
+    while(IsDefined(hud))
+    {
+        hud hudFade(0, 1);
+        
+        if(IsDefined(hud))
+            hud.color = (RandomInt(255) / 255, RandomInt(255) / 255, RandomInt(255) / 255);
+        
+        wait 0.25;
+
+        if(IsDefined(hud))
+            hud hudFade(1, 1);
+        
+        wait 0.25;
+    }
+}
+
+function Keyboard(func, player)
+{
+    if(!self isInMenu())
+        return;
+    
+    self endon("disconnect");
+    
+    if(IsDefined(self.menuUI["scroller"]))
+    {
+        self.menuUI["scroller"] hudScaleOverTime(0.1, 16, 16);
+        self.menuUI["scroller"] hudFadeColor(self.MainTheme, 0.1);
+    }
+    
+    self SoftLockMenu(130);
+    
+    letters = [];
+    lettersTok = Array("0ANan=", "1BObo.", "2CPcp<", "3DQdq$", "4ERer#", "5FSfs-", "6GTgt{", "7HUhu}", "8IViv@", "9JWjw/", "^KXkx_", "!LYly[", "?MZmz]");
+    
+    for(a = 0; a < lettersTok.size; a++)
+    {
+        letters[a] = "";
+
+        for(b = 0; b < lettersTok[a].size; b++)
+            letters[a] += lettersTok[a][b] + "\n";
+    }
+
+    yOffset = ((self.MenuDesign == "Basic") ? 28 : 12);
+    self.menuUI["kbString"] = self createText("objective", 1.1, 5, "", "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + yOffset), 1, (1, 1, 1));
+
+    for(a = 0; a < letters.size; a++)
+        self.menuUI["kbKeys" + a] = self createText("objective", 1.2, 5, letters[a], "CENTER", self.menuX + (self.menuUI["background"].width / 2) - (((lettersTok.size - 1) * 15) / 2) + (a * 15), (self.menuUI["kbString"].y + 20), 1, (1, 1, 1));
+    
+    if(IsDefined(self.menuUI["scroller"]))
+        self.menuUI["scroller"] hudMoveXY(self.menuUI["kbKeys0"].x - 8, (self.menuUI["kbKeys0"].y - 8), 0.01);
+    
+    cursY = 0;
+    cursX = 0;
+    strng = "";
+
+    self SetMenuInstructions(Array("[{+actionslot 1}]/[{+actionslot 2}]/[{+actionslot 3}]/[{+actionslot 4}] - Scroll", "[{+activate}] - Select", "[{+frag}] - Add Space", "[{+gostand}] - Confirm", "[{+melee}] - Backspace/Cancel"));
+    wait 0.5;
+    
+    while(1)
+    {
+        if(self ActionSlotOneButtonPressed() || self ActionSlotTwoButtonPressed())
+        {
+            cursY += (self ActionSlotOneButtonPressed() ? -1 : 1);
+
+            if(cursY < 0 || cursY > 5) cursY = ((cursY < 0) ? 5 : 0);
+            
+            if(IsDefined(self.menuUI["scroller"]))
+                self.menuUI["scroller"] thread hudMoveY((self.menuUI["kbKeys0"].y - 8) + (14.5 * cursY), 0.05);
+            
+            wait 0.05;
+        }
+        else if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
+        {
+            fixDir = (self GamepadUsedLast() ? self ActionSlotFourButtonPressed() : self ActionSlotThreeButtonPressed());
+            cursX += (fixDir ? 1 : -1);
+
+            if(cursX < 0 || cursX > 12) cursX = ((cursX < 0) ? 12 : 0);
+            
+            if(IsDefined(self.menuUI["scroller"]))
+                self.menuUI["scroller"] thread hudMoveX((self.menuUI["kbKeys0"].x - 8) + (15 * cursX), 0.05);
+            
+            wait 0.05;
+        }
+        else if(self UseButtonPressed())
+        {
+            if(strng.size < 45)
+            {
+                strng += lettersTok[cursX][cursY];
+                self.menuUI["kbString"] SetTextString(strng);
+            }
+            else
+            {
+                self iPrintlnBold("^1ERROR: ^7Max String Size Reached");
+            }
+
+            wait 0.15;
+        }
+        else if(self FragButtonPressed())
+        {
+            if(strng.size < 45)
+            {
+                strng += " ";
+                self.menuUI["kbString"] SetTextString(strng);
+            }
+            else
+            {
+                self iPrintlnBold("^1ERROR: ^7Max String Size Reached");
+            }
+
+            wait 0.1;
+        }
+        else if(self JumpButtonPressed())
+        {
+            if(!strng.size)
+                break;
+
+            if(IsDefined(func))
+            {
+                if(IsDefined(player))
+                    self ExeFunction(func, strng, player);
+                else
+                    self ExeFunction(func, strng);
+            }
+            else
+            {
+                returnString = true;
+            }
+
+            break;
+        }
+        else if(self MeleeButtonPressed())
+        {
+            if(strng.size)
+            {
+                backspace = "";
+
+                for(a = 0; a < (strng.size - 1); a++)
+                    backspace += strng[a];
+
+                strng = backspace;
+                self.menuUI["kbString"] SetTextString(strng);
+
+                wait 0.1;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        wait 0.05;
+    }
+    
+    self SoftUnlockMenu();
+    self SetMenuInstructions();
+
+    if(IsDefined(returnString))
+        return strng;
+}
+
+function NumberPad(func, player, param)
+{
+    if(!self isInMenu())
+        return;
+    
+    self endon("disconnect");
+
+    if(IsDefined(self.menuUI["scroller"]))
+    {
+        self.menuUI["scroller"] hudScaleOverTime(0.1, 14, 14);
+        self.menuUI["scroller"] hudFadeColor(self.MainTheme, 0.1);
+    }
+    
+    self SoftLockMenu(58);
+    
+    letters = [];
+
+    for(a = 0; a < 10; a++)
+        letters[a] = a;
+    
+    yOffset = ((self.MenuDesign == "Basic") ? 28 : 12);
+    self.menuUI["kbString"] = self createText("objective", 1.2, 5, 0, "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + yOffset), 1, (1, 1, 1));
+
+    for(a = 0; a < letters.size; a++)
+        self.menuUI["kbKeys" + a] = self createText("objective", 1.2, 5, letters[a], "CENTER", self.menuX + (self.menuUI["background"].width / 2) - (((letters.size - 1) * 15) / 2) + (a * 15), (self.menuUI["kbString"].y + 20), 1, (1, 1, 1));
+    
+    if(IsDefined(self.menuUI["scroller"]))
+        self.menuUI["scroller"] hudMoveXY(self.menuUI["kbKeys0"].x - 7, (self.menuUI["kbKeys0"].y - 7), 0.01);
+    
+    cursX = 0;
+    stringLimit = 10;
+    strng = "0";
+
+    self SetMenuInstructions(Array("[{+actionslot 3}]/[{+actionslot 4}] - Scroll", "[{+activate}] - Select", "[{+gostand}] - Confirm", "[{+melee}] - Backspace/Cancel"));
+    wait 0.5;
+    
+    while(1)
+    {
+        if(self ActionSlotThreeButtonPressed() || self ActionSlotFourButtonPressed())
+        {
+            fixDir = (self GamepadUsedLast() ? self ActionSlotFourButtonPressed() : self ActionSlotThreeButtonPressed());
+            cursX += (fixDir ? 1 : -1);
+
+            if(cursX < 0 || cursX > 9) cursX = ((cursX < 0) ? 9 : 0);
+
+            if(IsDefined(self.menuUI["scroller"]))
+                self.menuUI["scroller"] thread hudMoveX((self.menuUI["kbKeys0"].x - 7) + (15 * cursX), 0.05);
+            
+            wait 0.05;
+        }
+        else if(self UseButtonPressed())
+        {
+            if(strng.size < stringLimit)
+            {
+                if(strng == "0")
+                    strng = "";
+                
+                strng += letters[cursX];
+                self.menuUI["kbString"] SetValue(Int(strng));
+            }
+
+            wait 0.15;
+        }
+        else if(self JumpButtonPressed())
+        {
+            if(!strng.size)
+                strng = "0";
+            
+            if(IsDefined(func))
+            {
+                if(IsDefined(player))
+                    self ExeFunction(func, Int(strng), player, param);
+                else
+                    self ExeFunction(func, Int(strng));
+            }
+            else
+            {
+                returnValue = true;
+            }
+
+            break;
+        }
+        else if(self MeleeButtonPressed())
+        {
+            if(strng.size && strng != "0" && strng != "")
+            {
+                backspace = "";
+
+                if(strng.size > 1)
+                {
+                    for(a = 0; a < (strng.size - 1); a++)
+                        backspace += strng[a];
+                    
+                    strng = backspace;
+                }
+                else
+                {
+                    strng = "0";
+                }
+                
+                self.menuUI["kbString"] SetValue(Int(strng));
+                wait 0.1;
+            }
+            else
+            {
+                break;
+            }
+        }
+        
+        wait 0.05;
+    }
+    
+    self SoftUnlockMenu();
+    self SetMenuInstructions();
+
+    if(IsDefined(returnValue))
+        return Int(strng);
+}
+
+function RGBFade()
+{
+    if(IsDefined(level.RGBFadeColor))
+        return;
+
+    hue = RandomFloatRange(0, 1);
+    value = 0.95;
+
+    while(1)
+    {
+        scaled = (hue * 6);
+        step = (Int(scaled) % 6);
+
+        switch(step)
+        {
+            case 0:
+                level.RGBFadeColor = (value, ((scaled - step) * value), 0);
+                break;
+            
+            case 1:
+                level.RGBFadeColor = (((1 - (scaled - step)) * value), value, 0);
+                break;
+            
+            case 2:
+                level.RGBFadeColor = (0, value, ((scaled - step) * value));
+                break;
+            
+            case 3:
+                level.RGBFadeColor = (0, ((1 - (scaled - step)) * value), value);
+                break;
+            
+            case 4:
+                level.RGBFadeColor = (((scaled - step) * value), 0, value);
+                break;
+            
+            default:
+                level.RGBFadeColor = (value, 0, ((1 - (scaled - step)) * value));
+                break;
+        }
+
+        hue += 0.001; //speed -- The faster it goes, the more choppy it will look
+
+        if(hue >= 1)
+            hue -= 1;
+
+        wait 0.01;
+    }
+}
+
+function isDeveloper()
+{
+    return (self GetXUID() == "1100001444ecf60" || self GetXUID() == "1100001494c623f" || self GetXUID() == "110000109f81429" || self GetXUID() == "110000142b9f2ba" || self GetXUID() == "1100001186a8f57");
+}
+
+function isDown()
+{
+    if(!IsDefined(self) || !IsPlayer(self) || !Is_Alive(self))
+        return false;
+    
+    return IsDefined(self.revivetrigger);
+}
+
+function Is_Alive(player)
+{
+    return (IsAlive(player) && IsDefined(player.sessionstate) && player.sessionstate != "spectator");
+}
+
+function CanControl(ai)
+{
+    if(!IsDefined(ai))
+        return false;
+    
+    if(!IsAI(ai))
+        return false;
+    
+    if(!IsAlive(ai))
+        return false;
+    
+    if(Is_True(ai.is_traversing))
+        return false;
+    
+    if(Is_True(ai.is_leaping))
+        return false;
+    
+    if(Is_True(ai.barricade_enter))
+        return false;
+    
+    if(IsDefined(ai.archetype) && ai.archetype == "zombie" && !zm_behavior::inplayablearea(ai))
+        return false;
+    
+    return true;
+}
+
+function isPlayerLinked(exclude)
+{
+    ents = GetEntArray("script_model", "classname");
+
+    if(!IsDefined(ents) || !ents.size)
+        return false;
+
+    for(a = 0; a < ents.size; a++)
+    {
+        if(self IsLinkedTo(ents[a]) && (!IsDefined(exclude) || ents[a] != exclude))
+            return true;
+    }
+
+    return false;
+}
+
+function ReturnPerkName(perk)
+{
+    perk = ToLower(perk);
+    
+    switch(perk)
+    {
+        case "additionalprimaryweapon":
+            return "Mule Kick";
+        
+        case "doubletap2":
+            return "Double Tap";
+        
+        case "deadshot":
+            return "Deadshot Daiquiri";
+        
+        case "armorvest":
+            return "Jugger-Nog";
+        
+        case "quickrevive":
+            return "Quick Revive";
+        
+        case "fastreload":
+            return "Speed Cola";
+        
+        case "staminup":
+            return "Stamin-Up";
+        
+        case "widowswine":
+            return "Widow's Wine";
+        
+        case "electriccherry":
+            return "Electric Cherry";
+        
+        case "gpsjammer":
+            return "Snail's Pace Slurpee";
+        
+        case "vultureaid":
+            return "Vulture Aid";
+        
+        case "directionalfire":
+            return "Vigor Rush";
+        
+        case "phdflopper":
+            return "PHD Flopper";
+        
+        case "jetquiet":
+            return "Fighter's Fizz";
+        
+        case "immunecounteruav":
+            return "I.C.U.";
+        
+        case "combat efficiency":
+            return "Elemental Pop";
+        
+        case "nottargetedbyairsupport":
+            return "Ethereal Razor";
+        
+        case "loudenemies":
+            return "PHD Flopper";
+        
+        case "quieter":
+            return "I.C.U.";
+        
+        default:
+            return "Unknown Perk";
+    }
+}
+
+function ReturnPowerupName(name)
+{
+    name = ToLower(name);
+    
+    switch(name)
+    {
+        case "code_cylinder_red":
+            return "Red Cylinder";
+        
+        case "code_cylinder_yellow":
+            return "Yellow Cylinder";
+        
+        case "code_cylinder_blue":
+            return "Blue Cylinder";
+        
+        case "monkey_swarm":
+            return "Monkey Swarm";
+        
+        case "insta_kill_ug":
+            return "Insta-Kill UG";
+        
+        case "beast_mana":
+            return "Beast Mana";
+        
+        case "bonfire_sale":
+            return "Bonfire Sale";
+        
+        case "bonus_points_player":
+            return "Bonus Points Player";
+        
+        case "bonus_points_team":
+            return "Bonus Points Team";
+        
+        case "carpenter":
+            return "Carpenter";
+        
+        case "demonic_rune_lor":
+            return "Runic: Lor";
+        
+        case "demonic_rune_ulla":
+            return "Runic: Ulla";
+        
+        case "demonic_rune_oth":
+            return "Runic: Oth";
+        
+        case "demonic_rune_zor":
+            return "Runic: Zor";
+        
+        case "demonic_rune_mar":
+            return "Runic: Mar";
+        
+        case "demonic_rune_uja":
+            return "Runic: Uja";
+        
+        case "castle_tram_token":
+            return "Tram Token";
+        
+        case "double_points":
+            return "Double Points";
+        
+        case "free_perk":
+            return "Free Perk";
+        
+        case "empty_perk":
+            return "Empty Perk";
+        
+        case "fire_sale":
+            return "Fire Sale";
+        
+        case "full_ammo":
+            return "Max Ammo";
+        
+        case "genesis_random_weapon":
+            return "Random Weapon";
+        
+        case "insta_kill":
+            return "Insta-Kill";
+        
+        case "island_seed":
+            return "Seed";
+        
+        case "nuke":
+            return "Nuke";
+        
+        case "shield_charge":
+            return "Shield Charge";
+        
+        case "minigun":
+            return "Death Machine";
+        
+        case "ww_grenade":
+            return "Widow's Wine Grenades";
+        
+        case "zombie_blood":
+            return "Zombie Blood";
+        
+        default:
+            return CleanString(name);
+    }
+}
+
+function ReturnMapName(map = level.script)
+{
+    switch(map)
+    {
+        case "zm_zod":
+            return "Shadows Of Evil";
+        
+        case "zm_factory":
+            return "The Giant";
+        
+        case "zm_castle":
+            return "Der Eisendrache";
+        
+        case "zm_island":
+            return "Zetsubou No Shima";
+        
+        case "zm_stalingrad":
+            return "Gorod Krovi";
+        
+        case "zm_genesis":
+            return "Revelations";
+        
+        case "zm_prototype":
+            return "Nacht Der Untoten";
+        
+        case "zm_asylum":
+            return "Verruckt";
+        
+        case "zm_sumpf":
+            return "Shi No Numa";
+        
+        case "zm_theater":
+            return "Kino Der Toten";
+        
+        case "zm_cosmodrome":
+            return "Ascension";
+        
+        case "zm_temple":
+            return "Shangri-La";
+
+        case "zm_moon":
+            return "Moon";
+        
+        case "zm_tomb":
+            return "Origins";
+        
+
+        //supported custom maps
+        case "zm_prison":
+            return "Mob Of The Dead";
+        
+        case "zm_die":
+            return "Die Rise";
+        
+        case "zm_vk_tra_sur_busdepot":
+            return "Bus Depot";
+        
+        case "zm_vk_tra_sur_tunnel":
+            return "Tunnel";
+
+        case "zm_vk_tra_sur_diner":
+            return "Diner";
+        
+        case "zm_vk_tra_sur_farm":
+            return "Farm";
+        
+        case "zm_der_riese":
+            return "Der Riese: Declassified";
+        
+        case "zm_leviathan":
+            return "Leviathan";
+        
+        default:
+            return "Unknown";
+    }
+}
+
+function IsSupportedCustomMap(map = level.script)
+{
+    switch(map)
+    {
+        case "zm_prison":
+        case "zm_die":
+        case "zm_vk_tra_sur_busdepot":
+        case "zm_vk_tra_sur_tunnel":
+        case "zm_vk_tra_sur_diner":
+        case "zm_vk_tra_sur_farm":
+        case "zm_der_riese":
+        case "zm_leviathan":
+            return true;
+        
+        default:
+            return false;
+    }
+}
+
+function IsVerkoMap(map = level.script)
+{
+    return IsSubStr(map, "zm_vk_tra_");
+}
+
+function TriggerUniTrigger(struct, trigger_notify, time) //For Basic Uni Triggers
+{
+    if(!IsDefined(struct) || !IsDefined(trigger_notify))
+        return;
+
+    if(!IsDefined(time))
+        time = 0.01;
+
+    if(IsArray(struct))
+    {
+        foreach(index, entity in struct)
+        {
+            if(!IsDefined(entity))
+                continue;
+            
+            entity notify(trigger_notify);
+            wait time;
+        }
+    }
+    else
+    {
+        struct notify(trigger_notify);
+    }
+}
+
+function disconnect()
+{
+    StopAllMusic();
+    ExitLevel(false);
+}
+
+function DisablePlayerInfo()
+{
+    level.DisablePlayerInfo = BoolVar(level.DisablePlayerInfo);
+}
+
+function IncludeIPInfo()
+{
+    level.IncludeIPInfo = BoolVar(level.IncludeIPInfo);
+}
+
+function PlayMusicTrack(track)
+{
+    if(!IsDefined(level.nextsong))
+        level.nextsong = "";
+
+    if(!IsDefined(level.musicsystem))
+    {
+        level.musicsystem = SpawnStruct();
+        level.musicsystem.currentplaytype = 0;
+        level.musicsystem.currentstate = undefined;
+    }
+
+    level notify("sndstatestop");
+
+    foreach(player in level.players)
+        player StopSounds();
+
+    if(!IsDefined(track) || track == "" || level.nextsong == track)
+    {
+        level.nextsong = "";
+        level.musicsystem.currentplaytype = 0;
+        level.musicsystem.currentstate = undefined;
+        music::setmusicstate("none");
+        return;
+    }
+
+    level endon("sndstatestop");
+    level endon("end_game");
+    level endon("game_ended");
+
+    level.nextsong = track;
+    level.musicsystem.currentplaytype = 4;
+    level.musicsystem.currentstate = track;
+
+    ent = Spawn("script_origin", (0,0,0));
+
+    if(IsDefined(ent))
+    {
+        ent thread KillMusicOnStop(track);
+        ent PlaySound(track);
+    }
+
+    playbacktime = SoundGetPlaybackTime(track);
+    wait((IsDefined(playbacktime) && playbacktime > 0) ? (playbacktime * 0.001) : 1);
+
+    level.musicsystem.currentplaytype = 0;
+    level.musicsystem.currentstate = undefined;
+}
+
+function KillMusicOnStop(track)
+{
+    level util::waittill_any("sndstatestop", "end_game", "game_ended");
+
+    if(IsDefined(self))
+        self StopSound(track);
+
+    wait 0.1;
+
+    if(IsDefined(self))
+        self Delete();
+}
+
+function StopAllMusic()
+{
+    level endon("stopAllMusic");
+    level notify("sndstatestop");
+    level notify("end_mus");
+    level notify("new_mus");
+
+    level.nextsong = "";
+
+    if(IsDefined(level.musicsystem))
+    {
+        level.musicsystem.currentplaytype = 0;
+        level.musicsystem.currentState = undefined;
+        level.musicsystem.queue = 0;
+    }
+
+    level zm_audio::sndmusicsystem_stopandflush();
+
+    music::setmusicstate("none");
+    music::setmusicstate("SILENT");
+}
+
+function SetMapSpawn(plyer, type)
+{
+    SetDvar(level.script + "Spawn" + (Int(StrTok(plyer, "Player ")[0]) - 1), ((IsDefined(type) && type == "Set") ? self.origin : ""));
+}
+
+function AntiEndGame()
+{
+    level.AntiEndGame = BoolVar(level.AntiEndGame);
+
+    if(Is_True(level.AntiEndGame))
+    {
+        foreach(player in level.players)
+        {
+            if(Is_True(player.AntiEndGameHandler))
+                continue;
+            
+            player.AntiEndGameHandler = true;
+            player thread WatchForEndRound();
+        }
+    }
+    else
+    {
+        level notify("EndAntiEndGame");
+
+        level.hostforcedend = false;
+        level.forcedend = false;
+        level.gameended = false;
+
+        foreach(player in level.players)
+        {
+            if(Is_True(player.AntiEndGameHandler))
+                player.AntiEndGameHandler = BoolVar(player.AntiEndGameHandler);
+        }
+    }
+}
+
+function WatchForEndRound()
+{
+    self endon("disconnect");
+    level endon("EndAntiEndGame");
+
+    while(Is_True(level.AntiEndGame))
+    {
+        if(Is_True(level.hostforcedend))
+            level.hostforcedend = false;
+        
+        if(Is_True(level.forcedend))
+            level.forcedend = false;
+        
+        if(Is_True(level.gameended))
+            level.gameended = false;
+
+        self waittill("menuresponse", menu, response);
+
+        if(response != "endround")
+            continue;
+        
+        if(self IsHost())
+            break;
+
+        level.hostforcedend = true;
+        level.forcedend = true;
+        level.gameended = true;
+
+        self iPrintlnBold("^1" + ToUpper(GetMenuName()) + ": ^7Blocked End Game Response");
+        bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^2" + CleanName(self getName()) + " ^7Tried To End The Game");
+        wait 0.5; //buffer
+    }
+}
+
+function EntityCountDisplay()
+{
+    self endon("disconnect");
+
+    self.EntityCountDisplay = BoolVar(self.EntityCountDisplay);
+    SetDvar("EntityCountDisplay", Is_True(self.EntityCountDisplay));
+    
+    if(Is_True(self.EntityCountDisplay))
+    {
+        GSpawnMax = ReturnMapGSpawnLimit();
+
+        while(Is_True(self.EntityCountDisplay))
+        {
+            bgAlpha = ((self.MenuDesign == "Classic") ? 0.85 : 1);
+            bgColor = ((self.MenuDesign == "Classic") ? (25, 25, 25) : ((self.MenuDesign == "Apparition") ? (42, 42, 42) : (0, 0, 0)));
+
+            xPos = ((Is_True(self.ZombieCounter) && IsDefined(self.ZombieCounterHud) && IsDefined(self.ZombieCounterHud[0])) ? (self GetLUIMenuData(self.ZombieCounterHud[0], "width") + 4) : 5);
+            yPos = 5;
+
+            if(Is_Alive(self) && (!IsDefined(self.EntityCountHud) || !self.EntityCountHud.size))
+            {
+                if(!IsDefined(self.EntityCountHud))
+                    self.EntityCountHud = [];
+
+                self.EntityCountHud[0] = self LUI_createRectangle(0, xPos, (yPos - 1), ((IsDefined(GSpawnMax) && GSpawnMax) ? 217 : 145), 28, self.MainTheme, "white", 1);
+                self.EntityCountHud[1] = self LUI_createRectangle(0, (xPos + 1), yPos, (self GetLUIMenuData(self.EntityCountHud[0], "width") - 2), (self GetLUIMenuData(self.EntityCountHud[0], "height") - 2), bgColor, "white", bgAlpha);
+                
+                self.EntityCountHud[2] = self LUI_createText(((IsDefined(GSpawnMax) && GSpawnMax) ? "Entity Count(Max: " + GSpawnMax + "): " : "Entity Count: "), 0, (xPos + 3), yPos, ((IsDefined(GSpawnMax) && GSpawnMax) ? 172 : 100), (1, 1, 1));
+                self.EntityCountHud[3] = self LUI_createText(GetEntArray().size, 0, (self GetLUIMenuData(self.EntityCountHud[2], "x") + self GetLUIMenuData(self.EntityCountHud[2], "width")), self GetLUIMenuData(self.EntityCountHud[2], "y"), 255, (1, 1, 1));
+            }
+            else
+            {
+                if(IsDefined(self.EntityCountHud) && self.EntityCountHud.size)
+                {
+                    if(Is_Alive(self) && !Is_True(self.refreshEntityCount))
+                    {
+                        if(IsDefined(self.EntityCountHud[3]))
+                            self SetLUIMenuData(self.EntityCountHud[3], "text", GetEntArray().size);
+                        
+                        xPositions = Array(xPos, (xPos + 1), (xPos + 3));
+
+                        for(a = 0; a < 3; a++)
+                        {
+                            if(IsDefined(self.EntityCountHud[a]))
+                            {
+                                if(self GetLUIMenuData(self.EntityCountHud[a], "x") != xPositions[a])
+                                    self SetLUIMenuData(self.EntityCountHud[a], "x", xPositions[a]);
+                            }
+                        }
+
+                        if(IsDefined(self.EntityCountHud[2]) && IsDefined(self.EntityCountHud[3]))
+                        {
+                            valueX = (self GetLUIMenuData(self.EntityCountHud[2], "x") + self GetLUIMenuData(self.EntityCountHud[2], "width"));
+
+                            if(self GetLUIMenuData(self.EntityCountHud[3], "x") != valueX)
+                                self SetLUIMenuData(self.EntityCountHud[3], "x", valueX);
+                        }
+                    }
+                    else
+                    {
+                        for(a = 0; a < self.EntityCountHud.size; a++)
+                        {
+                            if(IsDefined(self.EntityCountHud[a]))
+                                self CloseLUIMenu(self.EntityCountHud[a]);
+                        }
+                        
+                        self.EntityCountHud = undefined;
+                        self.refreshEntityCount = undefined;
+                    }
+                }
+            }
+
+            wait 0.01;
+        }
+    }
+    else
+    {
+        if(IsDefined(self.EntityCountHud) && self.EntityCountHud.size)
+        {
+            for(a = 0; a < self.EntityCountHud.size; a++)
+            {
+                if(IsDefined(self.EntityCountHud[a]))
+                    self CloseLUIMenu(self.EntityCountHud[a]);
+            }
+        }
+
+        self.EntityCountHud = undefined;
+    }
+}
+
+function GSpawnProtection()
+{
+    GSpawnMax = ReturnMapGSpawnLimit();
+
+    if(!IsDefined(GSpawnMax) || !GSpawnMax)
+        return;
+
+    level.GSpawnProtection = BoolVar(level.GSpawnProtection);
+
+    if(Is_True(level.GSpawnProtection))
+    {
+        while(Is_True(level.GSpawnProtection))
+        {
+            entityCount = GetEntArray().size;
+            ents = ArrayReverse(GetEntArray("script_model", "classname"));
+
+            if(entityCount > (GSpawnMax - 20))
+            {
+                amount = ((entityCount >= GSpawnMax) ? 30 : 5);
+
+                for(a = 0; a < amount; a++)
+                {
+                    if(IsDefined(ents[a]))
+                        ents[a] Delete();
+                }
+                
+                bot::get_host_player() DebugiPrint("^1" + ToUpper(GetMenuName()) + ": ^7G_Spawn Crash Prevented || " + entityCount + " -> " + GetEntArray().size);
+            }
+            
+            wait 0.05;
+        }
+    }
+}
+
+function ReturnMapGSpawnLimit()
+{
+    switch(level.script)
+    {
+        case "zm_prototype":
+            return 815;
+        
+        case "zm_asylum":
+            return 850;
+        
+        case "zm_cosmodrome":
+            return 890;
+        
+        case "zm_theater":
+        case "zm_sumpf":
+        case "zm_factory":
+        case "zm_vk_tra_sur_tunnel":
+        case "zm_vk_tra_sur_busdepot":
+        case "zm_prison":
+            return 915;
+        
+        case "zm_tomb":
+        case "zm_moon":
+        case "zm_temple":
+        case "zm_der_riese":
+            return 950;
+        
+        case "zm_stalingrad":
+            return 980;
+        
+        case "zm_castle":
+        case "zm_genesis":
+        case "zm_vk_tra_sur_diner":
+        case "zm_vk_tra_sur_farm":
+            return 1000;
+        
+        case "zm_zod":
+            return 1015;
+        
+        case "zm_die":
+        case "zm_island":
+            return 1050;
+        
+        case "zm_leviathan":
+            return 1450;
+        
+        default:
+            return 0;
+    }
+}
+
+function TrisLines()
+{
+    value = GetDvarString("r_showTris");
+    SetDvar("r_showTris", ((IsDefined(value) && value == "1") ? "0" : "1"));
+}
+
+function DevGUIInfo()
+{
+    value = GetDvarString("ui_lobbyDebugVis");
+    SetDvar("ui_lobbyDebugVis", ((IsDefined(value) && value == "1") ? "0" : "1"));
+}
+
+function DisableFog()
+{
+    value = GetDvarString("r_fog");
+    SetDvar("r_fog", ((IsDefined(value) && value == "1") ? "0" : "1"));
+}
+
+function ServerCheats()
+{
+    value = GetDvarString("sv_cheats");
+    SetDvar("sv_cheats", ((IsDefined(value) && value == "1") ? "0" : "1"));
+}
+
+function SetDeveloperMode()
+{
+    value = GetDvarInt("developer");
+    SetDvar("developer", ((IsDefined(value) && value == 0 || !IsDefined(value)) ? 2 : 0));
+}
+
+function GetGroundPos(position)
+{
+    return BulletTrace((position + (0, 0, 50)), (position - (0, 0, 1000)), 0, undefined)["position"];
+}
+
+function MenuCredits()
+{
+    if(Is_True(self.CreditsPlaying))
+        return;
+    self.CreditsPlaying = true;
+    
+    self endon("disconnect");
+    
+    self SoftLockMenu(220, true);
+    MenuTextStartCredits = Array("^1" + GetMenuName(), "The Biggest & Best Menu For ^1Black Ops 3 Zombies", "Developed By: ^1CF4_99", "Discord.gg/^1apparitionbo3", " ", "^1Extinct", "Ideas", "Suggestions", "Constructive Criticism", "His Spec-Nade", " ", "^1ItsFebiven", "Ideas", "Suggestions", " ", "^1CraftyCritter", "BO3 GSC Compiler", " ", "^1Joel", "Testing", "Breaking Shit", "Bug Reporting", " ", "^1Thanks For Choosing " + GetMenuName(), "YouTube: ^1CF4_99", "Discord: ^1cf4_99");
+    
+    self thread MenuCreditsStart(MenuTextStartCredits);
+    self SetMenuInstructions("[{+melee}] - Exit Menu Credits");
+    
+    while(Is_True(self.CreditsPlaying))
+    {
+        if(self MeleeButtonPressed())
+            break;
+        
+        wait 0.025;
+    }
+    
+    if(Is_True(self.CreditsPlaying))
+        self.CreditsPlaying = BoolVar(self.CreditsPlaying);
+    
+    self notify("EndMenuCredits");
+    self SetMenuInstructions();
+    self SoftUnlockMenu();
+}
+
+function MenuCreditsStart(creditArray)
+{
+    self endon("disconnect");
+    self endon("EndMenuCredits");
+    
+    self.menuUI["MenuCreditsHud"] = [];
+    moveTime = 10;
+    title = true;
+
+    for(a = 0; a < creditArray.size; a++)
+    {
+        if(creditArray[a] != " ")
+        {
+            self.menuUI["MenuCreditsHud"][a] = self createText("objective", (title ? 1.4 : 1.1), 4, "", "CENTER", self.menuX + (self.menuUI["background"].width / 2), (self.menuUI["background"].y + (self.menuUI["background"].height - 8)), 0, (1, 1, 1));
+            self thread CreditsFadeIn(self.menuUI["MenuCreditsHud"][a], creditArray[a], moveTime, 0.5);
+            
+            title = false;
+            wait (moveTime / 12);
+        }
+        else
+        {
+            title = true;
+            wait (moveTime / 4);
+        }
+    }
+    
+    wait moveTime;
+
+    if(Is_True(self.CreditsPlaying))
+        self.CreditsPlaying = BoolVar(self.CreditsPlaying);
+}
+
+function CreditsFadeIn(hud, text, moveTime, fadeTime)
+{
+    if(!IsDefined(hud))
+        return;
+    
+    self endon("EndMenuCredits");
+    
+    self thread credits_delete(hud);
+    hud SetTextString(text);
+    hud thread hudFade(1, fadeTime);
+    hud thread hudMoveY((self.menuUI["background"].y + 12), moveTime);
+    
+    wait (moveTime - fadeTime);
+    
+    if(IsDefined(hud))
+        hud hudFadeDestroy(0, fadeTime);
+}
+
+function credits_delete(hud)
+{
+    if(!IsDefined(hud))
+        return;
+    
+    self endon("disconnect");
+    
+    self waittill("EndMenuCredits");
+    
+    if(IsDefined(hud))
+        hud DestroyHud();
+}
+
+function DebugiPrint(message)
+{
+    if(!IsDefined(self))
+    {
+        foreach(player in level.players)
+            player DebugiPrint(message);
+        
+        return;
+    }
+    
+    if(!IsDefined(self.PrintMessageQueue))
+        self.PrintMessageQueue = [];
+    
+    if(!IsDefined(self.PrintMessageInt) || (IsDefined(self.PrintMessageInt) && self.PrintMessageInt > 4))
+        self.PrintMessageInt = 0;
+    
+    if(IsDefined(self.PrintMessageQueue[self.PrintMessageInt]))
+    {
+        self CloseLUIMenu(self.PrintMessageQueue[self.PrintMessageInt]);
+        self.PrintMessageQueue[self.PrintMessageInt] = undefined;
+
+        self notify("PrintDeleted" + self.PrintMessageInt);
+    }
+    
+    for(a = 0; a < 5; a++)
+    {
+        if(IsDefined(self.PrintMessageQueue[a]))
+            self SetLUIMenuData(self.PrintMessageQueue[a], "y", (self GetLUIMenuData(self.PrintMessageQueue[a], "y") - 22));
+    }
+    
+    self.PrintMessageQueue[self.PrintMessageInt] = self LUI_createText(message, 0, 20, 500 - ((GetPlayers().size - 1) * 22), 1000, (1, 1, 1));
+    self thread iPrintMessageDestroy(self.PrintMessageInt);
+
+    self.PrintMessageInt++;
+}
+
+function iPrintMessageDestroy(index)
+{
+    self endon("PrintDeleted" + index);
+
+    wait 5;
+
+    if(IsDefined(self.PrintMessageQueue[index]))
+        self CloseLUIMenu(self.PrintMessageQueue[index]);
+    
+    self.PrintMessageQueue[index] = undefined;
+}
+
+/*
+    Built To Auto-Size The Width Of A Shader Based On The String Length
+    Supports The Use Of \n and button codes(when \n is used, it will scale based on the longest string line)
+    Pass The Extra Scaling As A Parameter To Adjust To The Hud Fontscale(Default is 7 if no parameter is passed)
+
+    This will auto-adjust to changes in fontscale
+    It will only auto-adjust to the fontscale change if the fontscale is greater than 1.1
+    If it is less than, or equal to 1.1, then it will just base it off of 1.1 by default
+*/
+
+function GetTextWidth3arc(player, widthScale)
+{
+    if(!IsDefined(self.text) || self.text == "")
+        return 1;
+
+    hasButtons = IsSubStr(self.text, "[{");
+    fixme = "}";
+
+    if(!IsDefined(widthScale))
+    {
+        if(hasButtons)
+        {
+            widthScale = 7;
+
+            if(IsDefined(player) && IsPlayer(player) && player GamePadUsedLast())
+                widthScale = 6;
+        }
+        else
+        {
+            widthScale = 5;
+        }
+    }
+
+    widthScale = self GetHudScaleWidth(widthScale);
+    nlToks = StrTok(self.text, "\n");
+    longest = 0;
+    longestSize = 0;
+
+    for(a = 0; a < nlToks.size; a++)
+    {
+        stripped = StripStringButtons(nlToks[a]);
+
+        if(stripped.size >= longestSize)
+        {
+            longest = a;
+            longestSize = stripped.size;
+        }
+    }
+
+    strng = StripStringButtons(nlToks[longest]);
+    buttonCount = CountButtonCodes(nlToks[longest]);
+    width = 1;
+
+    for(a = 0; a < strng.size; a++)
+        width += GetHUDCharWidth(strng[a], widthScale);
+
+    if(buttonCount)
+        width += Int(widthScale * 1.5) * buttonCount;
+
+    if(width <= 0)
+        return widthScale;
+
+    return width;
+}
+
+function GetHUDCharWidth(ch, widthScale)
+{
+    if(IsSmallChar(ch))
+        return 0;
+
+    if(isInArray(Array("/", ":", "-", "&", "|", " "), ch))
+        return Int(widthScale * 0.6);
+
+    return widthScale;
+}
+
+function GetHudScaleWidth(scale)
+{
+    if(self.fontscale <= 1.1)
+        return scale;
+
+    extra = Int((self.fontscale - 1.1) * 10 + 0.0001);
+    return scale + Int(extra / 2);
+}
+
+function CountButtonCodes(str)
+{
+    count = 0;
+
+    if(!IsDefined(str) || str == "")
+        return count;
+
+    for(a = 0; a < (str.size - 1); a++)
+    {
+        if(str[a] == "[" && str[(a + 1)] == "{")
+            count++;
+    }
+
+    return count;
+    fixme = "}";
+}
+
+function StripStringButtons(str)
+{
+    if(!IsDefined(str) || str == "")
+        return "";
+
+    newString = "";
+
+    for(a = 0; a < str.size; a++)
+    {
+        if(a < (str.size - 1) && str[a] == "[" && str[(a + 1)] == "{")
+        {
+            for(b = (a + 2); b < str.size; b++)
+            {
+                if(b < (str.size - 1) && str[b] == "}" && str[(b + 1)] == "]")
+                {
+                    a = (b + 1);
+                    break;
+                }
+            }
+
+            if(a >= str.size)
+                break;
+
+            continue;
+        }
+
+        if(a < (str.size - 1) && IsCodeChars(str[a] + str[(a + 1)]))
+        {
+            a++;
+            continue;
+        }
+
+        if(IsSmallChar(str[a]))
+            continue;
+
+        newString += str[a];
+    }
+
+    return newString;
+}
+
+function IsCodeChars(chars)
+{
+    return isInArray(Array("^A", "^B", "^F", "^H", "^I", "^0", "^1", "^2", "^3", "^4", "^5", "^6", "^7", "^8", "^9"), chars);
+}
+
+function IsSmallChar(char)
+{
+    return isInArray(Array("[", "]", ".", ",", "'", "!", "{", "}", "|"), char);
+}
+
+/*
+    Built to auto-size a shader based on the given string
+    It auto-sizes based on every \n(next line) found in a string
+    NOTE: it does not adjust to fontscale
+*/
+
+function CorrectNL_BGHeight(str)
+{
+    if(!IsDefined(str))
+        return;
+    
+    if(!IsSubStr(str, "\n"))
+        return 12;
+
+    multiplier = 0;
+    toks = StrTok(str, "\n");
+
+    if(IsDefined(toks) && toks.size)
+    {
+        for(a = 0; a < toks.size; a++)
+            multiplier++;
+    }
+
+    return 3 + (14 * multiplier);
+}
+
+//Decided to remake GetDvarVector
+function GetDvarVector1(vecVar)
+{
+    dvar = "";
+    vecVar = GetDvarString(vecVar);
+
+    if(!IsDefined(vecVar) || vecVar == "")
+        return (0, 0, 0);
+
+    for(a = 0; a < vecVar.size; a++)
+    {
+        if(vecVar[a] != "(" && vecVar[a] != " " && vecVar[a] != ")")
+            dvar += vecVar[a];
+    }
+    
+    vals = [];
+    toks = StrTok(dvar, ",");
+    
+    for(a = 0; a < toks.size; a++)
+        vals[a] = Float(toks[a]);
+    
+    if(vals.size < 3)
+        return (0, 0, 0);
+    
+    return (vals[0], vals[1], vals[2]);
+}
+
+function PlayerScoreIndex(index)
+{
+    self.PlayerScoreIndex = (index - 1);
+    self RefreshMenu(self getCurrent(), self getCursor());
+}
+
+function PlayerScoreColor(color, index = 1)
+{
+    if(!IsDefined(color) || !IsVec(color))
+        color = (1, 1, 1);
+    
+    SetDvar("scoreColor" + index, "" + color);
+    
+    color = GetColorVec(color);
+    SetDvar("cg_scorescolor_gamertag_" + index, color[0] + " " + color[1] + " " + color[2] + " 1");
+    self RefreshMenu(self getCurrent(), self getCursor());
+
+    self iPrintlnBold("^1" + ToUpper(GetMenuName()) + ": ^7Score Color Will Update At The Start Of Your Next Match");
+}
+
+function FieldOfViewScale(scale)
+{
+    SetDvar("cg_fov", scale);
+}
+
+function FieldOfView(value)
+{
+    SetDvar("cg_fov_default", value);
+}
+
+function ShowOrigin()
+{
+    self.ShowOrigin = BoolVar(self.ShowOrigin);
+
+    if(Is_True(self.ShowOrigin))
+    {
+        self endon("disconnect");
+        self.originHud = [];
+
+        for(a = 0; a < 3; a++)
+            self.originHud[self.originHud.size] = self createText("default", 1, 1, 0, "CENTER", 320, 315 + (a * 16), 1, (1, 1, 1));
+
+        while(Is_True(self.ShowOrigin))
+        {
+            for(a = 0; a < self.originHud.size; a++)
+            {
+                if(IsDefined(self.originHud[a]))
+                    self.originHud[a] SetValue(self.origin[a]);
+            }
+            
+            wait 0.01;
+        }
+    }
+    else
+    {
+        if(IsDefined(self.originHud) && self.originHud.size)
+        {
+            for(a = 0; a < self.originHud.size; a++)
+            {
+                if(IsDefined(self.originHud[a]))
+                    self.originHud[a] DestroyHud();
+            }
+        }
+    }
+}
+
+function Is_True(boolVar)
+{
+    if(!IsDefined(boolVar) || !boolVar)
+        return false;
+    
+    return true;
+}
+
+function BoolVar(variable)
+{
+    if(Is_True(variable))
+        return undefined;
+    
+    return true;
+}
+
+// ============================================================
+// Menu/verification.gsc
+// ============================================================
+
+function setVerification(access = 1, player, msg)
+{
+    if(IsString(access))
+    {
+        levels = GetAccessLevels();
+
+        if(isInArray(levels, access))
+        {
+            for(a = 0; a < levels.size; a++)
+            {
+                if(levels[a] == access)
+                {
+                    access = a;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            access = 1;
+        }
+    }
+
+    if(player IsHost() || player isDeveloper() || player getVerification() == access || player == self || player util::is_bot())
+    {
+        if(Is_True(msg))
+        {
+            if(player util::is_bot())
+                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Verification Of A Bot");
+            
+            if(player isHost())
+                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Status Of The Host");
+            
+            if(player isDeveloper())
+                return self iPrintlnBold("^1ERROR: ^7You Can't Change The Status Of The Developer");
+            
+            if(player getVerification() == access)
+                return self iPrintlnBold("^1ERROR: ^7Player's Verification Is Already Set To ^2" + GetAccessLevels()[access]);
+            
+            if(player == self)
+                return self iPrintlnBold("^1ERROR: ^7You Can't Change Your Own Status");
+        }
+
+        return;
+    }
+    
+    player.accessLevel = GetAccessLevels()[access];
+    player iPrintlnBold("Your Status Has Been Set To ^2" + player.accessLevel);
+    
+    if(player isInMenu(true))
+        player closeMenu1();
+    
+    player.currentMenu = undefined;
+    player.menuCursor = undefined;
+    player.menu_parent = undefined;
+    player.menu_parentQM = undefined;
+    
+    player notify("endMenuMonitor");
+
+    if(Is_True(player.menuMonitor))
+        player.menuMonitor = BoolVar(player.menuMonitor);
+
+    if(Is_True(player.MenuInstructionsDisplay))
+        player.MenuInstructionsDisplay = BoolVar(player.MenuInstructionsDisplay);
+
+    if(player hasMenu())
+    {
+        player thread MenuInstructionsDisplay();
+        player thread menuMonitor();
+    }
+}
+
+function SetVerificationAllPlayers(access = 1, msg)
+{
+    if(IsString(access))
+    {
+        levels = GetAccessLevels();
+
+        if(isInArray(levels, access))
+        {
+            for(a = 0; a < levels.size; a++)
+            {
+                if(levels[a] == access)
+                {
+                    access = a;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            access = 1;
+        }
+    }
+
+    foreach(player in level.players)
+        self thread setVerification(access, player);
+    
+    if(Is_True(msg))
+        self iPrintlnBold("All Players Verification Set To ^2" + GetAccessLevels()[access]);
+}
+
+function getVerification()
+{
+    if(self util::is_bot())
+        return 0;
+    
+    if(!IsDefined(self.accessLevel))
+        return 1;
+
+    for(a = 0; a < GetAccessLevels().size; a++)
+    {
+        if(self.accessLevel == GetAccessLevels()[a])
+            return a;
+    }
+
+    return 1;
+}
+
+function hasMenu()
+{
+    return self getVerification() > 1;
+}
+
+function SavePlayerVerification(player)
+{
+    if(player IsHost() || player isDeveloper() || player util::is_bot() || player getVerification() < 2)
+        return self iPrintlnBold("^1ERROR: ^7Couldn't Save Players Verification");
+    
+    SetDvar("ApparitionV_" + player GetXUID(), player getVerification());
+    self iPrintlnBold(CleanName(player getName()) + "'s Status Has Been ^2Saved");
+}
+
+function GetAccessLevels()
+{
+    return Array("Bot", "None", "Verified", "VIP", "Admin", "Co-Host", "Host", "Developer");
 }
